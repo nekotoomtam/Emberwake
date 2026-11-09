@@ -1,0 +1,49 @@
+{
+  "method": "built-in image_gen edit",
+  "transparent_background": true,
+  "original_png_bytes_preserved": true,
+  "assets": [
+    {
+      "name": "waterfront-low-v96",
+      "path": "waterfront-low-v96.png",
+      "size": [
+        2172,
+        724
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "visible_alpha64_rect": [
+        5,
+        343,
+        2167,
+        552
+      ],
+      "visible_aspect": 10.344497607655502,
+      "sha256": "c2d9b7445cbec683c17a4ed78ce383e5162db23e9fc849a9987a4d2f1b55eb52",
+      "generated_source": "C:/Users/nekot/.codex/generated_images/01a17dbf-1cf5-7fd3-a26b-ad79cf57bce9/exec-89c358bc-49cf-4e7f-9a63-dae946ec149f.png"
+    },
+    {
+      "name": "skyline-no-clock-v96",
+      "path": "skyline-no-clock-v96.png",
+      "size": [
+        2172,
+        724
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "visible_alpha64_rect": [
+        0,
+        306,
+        2157,
+        519
+      ],
+      "visible_aspect": 10.126760563380282,
+      "sha256": "e39543a7971f008014fa967bb0eb45edfddac79c6560452b1d52a2730a418161",
+      "generated_source": "C:/Users/nekot/.codex/generated_images/01a17dbf-1cf5-7fd3-a26b-ad79cf57bce9/exec-810f093c-1af2-427e-a3d9-39a4a2d29cf4.png"
+    }
+  ]
+}

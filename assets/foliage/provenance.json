@@ -1,0 +1,6 @@
+{
+  "method": "built-in image_gen",
+  "transparent_background": true,
+  "prompt": "Use case: stylized-concept. Game asset: ONE isolated small leafy deciduous branch cluster on genuinely transparent background, for textured foliage planes on a 3D tree in a sunny pixel-textured Victorian harbor game. Paint many small clearly shaped oval green leaves on a few slender branching brown twigs, arranged into an irregular airy flattened fan, with visible gaps between leaves and delicate protruding edge leaves. Olive/sage greens, darker cool green interiors, restrained warm highlights. Crisp illustrated pixel clusters, readable silhouette, no photographic surface, no huge broad polygonal blobs. Gentle neutral overhead lighting without baked hard shadows. Branch base at lower centre, leaves spread sideways and up. Only one cluster, no trunk, pot, landscape, sky, text, sheet, border or checkerboard. Alpha holes between leaves, transparent surroundings. Square canvas with modest margins. Designed as reusable 2D foliage cutout on several angled planes, so avoid a full spherical canopy.",
+  "asset": "branch-cluster.png"
+}

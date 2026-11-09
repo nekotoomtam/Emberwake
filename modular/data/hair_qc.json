@@ -1,0 +1,380 @@
+[
+  {
+    "id": "ropeworker",
+    "view": "front",
+    "hair_bbox": [
+      4,
+      3,
+      29,
+      20
+    ],
+    "width": 25,
+    "height": 17,
+    "checks": {
+      "left_ear_zone": 8,
+      "right_ear_zone": 12
+    }
+  },
+  {
+    "id": "ropeworker",
+    "view": "left",
+    "hair_bbox": [
+      3,
+      3,
+      29,
+      21
+    ],
+    "width": 26,
+    "height": 18,
+    "checks": {
+      "left_ear_zone": 6,
+      "right_ear_zone": 26
+    }
+  },
+  {
+    "id": "ropeworker",
+    "view": "right",
+    "hair_bbox": [
+      3,
+      3,
+      30,
+      21
+    ],
+    "width": 27,
+    "height": 18,
+    "checks": {
+      "left_ear_zone": 23,
+      "right_ear_zone": 9
+    }
+  },
+  {
+    "id": "ropeworker",
+    "view": "back",
+    "hair_bbox": [
+      4,
+      3,
+      29,
+      22
+    ],
+    "width": 25,
+    "height": 19,
+    "checks": {
+      "back_hair_core": "10 x 13 pixels covered"
+    }
+  },
+  {
+    "id": "dock_mender",
+    "view": "front",
+    "hair_bbox": [
+      3,
+      2,
+      29,
+      23
+    ],
+    "width": 26,
+    "height": 21,
+    "checks": {
+      "left_ear_zone": 9,
+      "right_ear_zone": 12
+    }
+  },
+  {
+    "id": "dock_mender",
+    "view": "left",
+    "hair_bbox": [
+      3,
+      2,
+      29,
+      23
+    ],
+    "width": 26,
+    "height": 21,
+    "checks": {
+      "left_ear_zone": 6,
+      "right_ear_zone": 26
+    }
+  },
+  {
+    "id": "dock_mender",
+    "view": "right",
+    "hair_bbox": [
+      3,
+      2,
+      30,
+      23
+    ],
+    "width": 27,
+    "height": 21,
+    "checks": {
+      "left_ear_zone": 23,
+      "right_ear_zone": 10
+    }
+  },
+  {
+    "id": "dock_mender",
+    "view": "back",
+    "hair_bbox": [
+      3,
+      2,
+      29,
+      23
+    ],
+    "width": 26,
+    "height": 21,
+    "checks": {
+      "back_hair_core": "10 x 13 pixels covered"
+    }
+  },
+  {
+    "id": "watchmaker",
+    "view": "front",
+    "hair_bbox": [
+      4,
+      2,
+      30,
+      20
+    ],
+    "width": 26,
+    "height": 18,
+    "checks": {
+      "left_ear_zone": 8,
+      "right_ear_zone": 11
+    }
+  },
+  {
+    "id": "watchmaker",
+    "view": "left",
+    "hair_bbox": [
+      3,
+      2,
+      29,
+      22
+    ],
+    "width": 26,
+    "height": 20,
+    "checks": {
+      "left_ear_zone": 6,
+      "right_ear_zone": 26
+    }
+  },
+  {
+    "id": "watchmaker",
+    "view": "right",
+    "hair_bbox": [
+      3,
+      2,
+      30,
+      22
+    ],
+    "width": 27,
+    "height": 20,
+    "checks": {
+      "left_ear_zone": 23,
+      "right_ear_zone": 9
+    }
+  },
+  {
+    "id": "watchmaker",
+    "view": "back",
+    "hair_bbox": [
+      4,
+      2,
+      30,
+      22
+    ],
+    "width": 26,
+    "height": 20,
+    "checks": {
+      "back_hair_core": "10 x 13 pixels covered"
+    }
+  },
+  {
+    "id": "bookseller",
+    "view": "front",
+    "hair_bbox": [
+      4,
+      0,
+      29,
+      20
+    ],
+    "width": 25,
+    "height": 20,
+    "checks": {
+      "left_ear_zone": 8,
+      "right_ear_zone": 8
+    }
+  },
+  {
+    "id": "bookseller",
+    "view": "left",
+    "hair_bbox": [
+      3,
+      0,
+      29,
+      22
+    ],
+    "width": 26,
+    "height": 22,
+    "checks": {
+      "left_ear_zone": 6,
+      "right_ear_zone": 22
+    }
+  },
+  {
+    "id": "bookseller",
+    "view": "right",
+    "hair_bbox": [
+      3,
+      0,
+      30,
+      22
+    ],
+    "width": 27,
+    "height": 22,
+    "checks": {
+      "left_ear_zone": 22,
+      "right_ear_zone": 9
+    }
+  },
+  {
+    "id": "bookseller",
+    "view": "back",
+    "hair_bbox": [
+      4,
+      0,
+      29,
+      22
+    ],
+    "width": 25,
+    "height": 22,
+    "checks": {
+      "back_hair_core": "10 x 13 pixels covered"
+    }
+  },
+  {
+    "id": "court_envoy",
+    "view": "front",
+    "hair_bbox": [
+      3,
+      1,
+      29,
+      20
+    ],
+    "width": 26,
+    "height": 19,
+    "checks": {
+      "left_ear_zone": 9,
+      "right_ear_zone": 11
+    }
+  },
+  {
+    "id": "court_envoy",
+    "view": "left",
+    "hair_bbox": [
+      3,
+      0,
+      29,
+      22
+    ],
+    "width": 26,
+    "height": 22,
+    "checks": {
+      "left_ear_zone": 6,
+      "right_ear_zone": 25
+    }
+  },
+  {
+    "id": "court_envoy",
+    "view": "right",
+    "hair_bbox": [
+      3,
+      0,
+      30,
+      22
+    ],
+    "width": 27,
+    "height": 22,
+    "checks": {
+      "left_ear_zone": 23,
+      "right_ear_zone": 9
+    }
+  },
+  {
+    "id": "court_envoy",
+    "view": "back",
+    "hair_bbox": [
+      4,
+      1,
+      29,
+      22
+    ],
+    "width": 25,
+    "height": 21,
+    "checks": {
+      "back_hair_core": "10 x 13 pixels covered"
+    }
+  },
+  {
+    "id": "salon_patron",
+    "view": "front",
+    "hair_bbox": [
+      4,
+      3,
+      29,
+      21
+    ],
+    "width": 25,
+    "height": 18,
+    "checks": {
+      "left_ear_zone": 9,
+      "right_ear_zone": 8
+    }
+  },
+  {
+    "id": "salon_patron",
+    "view": "left",
+    "hair_bbox": [
+      3,
+      3,
+      30,
+      22
+    ],
+    "width": 27,
+    "height": 19,
+    "checks": {
+      "left_ear_zone": 6,
+      "right_ear_zone": 31
+    }
+  },
+  {
+    "id": "salon_patron",
+    "view": "right",
+    "hair_bbox": [
+      3,
+      3,
+      30,
+      22
+    ],
+    "width": 27,
+    "height": 19,
+    "checks": {
+      "left_ear_zone": 28,
+      "right_ear_zone": 9
+    }
+  },
+  {
+    "id": "salon_patron",
+    "view": "back",
+    "hair_bbox": [
+      4,
+      3,
+      29,
+      22
+    ],
+    "width": 25,
+    "height": 19,
+    "checks": {
+      "back_hair_core": "10 x 13 pixels covered"
+    }
+  }
+]

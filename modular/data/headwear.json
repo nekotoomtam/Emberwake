@@ -1,0 +1,65 @@
+[
+  {
+    "id": "flat_cap",
+    "name": "Dockworker's flat cap",
+    "tier": "Worker",
+    "resident": "ropeworker",
+    "hair": "hair_short02"
+  },
+  {
+    "id": "kerchief",
+    "name": "Mender's tied kerchief",
+    "tier": "Worker",
+    "resident": "dock_mender",
+    "hair": "dock_mender"
+  },
+  {
+    "id": "goggles",
+    "name": "Workshop goggles",
+    "tier": "Worker",
+    "resident": "ropeworker",
+    "hair": "hair_short06"
+  },
+  {
+    "id": "bowler",
+    "name": "Merchant's bowler",
+    "tier": "Middle",
+    "resident": "watchmaker",
+    "hair": "hair_short03"
+  },
+  {
+    "id": "travel_hat",
+    "name": "Surveyor's travel hat",
+    "tier": "Middle",
+    "resident": "bookseller",
+    "hair": "hair_f07"
+  },
+  {
+    "id": "guild_ribbon",
+    "name": "Guild ribbon & clasp",
+    "tier": "Middle",
+    "resident": "bookseller",
+    "hair": "hair_f03"
+  },
+  {
+    "id": "top_hat",
+    "name": "Court envoy's top hat",
+    "tier": "Noble",
+    "resident": "court_envoy",
+    "hair": "hair_short07"
+  },
+  {
+    "id": "feather_hat",
+    "name": "Feathered salon hat",
+    "tier": "Noble",
+    "resident": "salon_patron",
+    "hair": "hair_f02"
+  },
+  {
+    "id": "circlet",
+    "name": "Aetherstone circlet",
+    "tier": "Noble",
+    "resident": "salon_patron",
+    "hair": "hair_f09"
+  }
+]

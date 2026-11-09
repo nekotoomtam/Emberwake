@@ -1,0 +1,51 @@
+{
+  "ropeworker": {
+    "iris": "#807154",
+    "lid": "#392b34",
+    "white": "#f6ead7",
+    "shadow": "#9e6b58",
+    "wide_front": false
+  },
+  "dock_mender": {
+    "iris": "#557871",
+    "lid": "#392b34",
+    "white": "#f6ead7",
+    "shadow": "#bc8c77",
+    "wide_front": false
+  },
+  "watchmaker": {
+    "iris": "#647f85",
+    "lid": "#392b34",
+    "white": "#f6ead7",
+    "shadow": "#b17a68",
+    "wide_front": false
+  },
+  "bookseller": {
+    "iris": "#777c58",
+    "lid": "#392b34",
+    "white": "#f6ead7",
+    "shadow": "#ce9e88",
+    "wide_front": false
+  },
+  "court_envoy": {
+    "iris": "#5e788f",
+    "lid": "#392b34",
+    "white": "#f6ead7",
+    "shadow": "#c59482",
+    "wide_front": false
+  },
+  "salon_patron": {
+    "iris": "#907994",
+    "lid": "#392b34",
+    "white": "#f6ead7",
+    "shadow": "#986559",
+    "wide_front": false
+  },
+  "blonde": {
+    "iris": "#b1384b",
+    "lid": "#392b34",
+    "white": "#f6ead7",
+    "shadow": "#d2a590",
+    "wide_front": true
+  }
+}

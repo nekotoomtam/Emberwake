@@ -1,0 +1,59 @@
+[
+  {
+    "id": "ropeworker",
+    "tier": "Worker",
+    "job": "Ropeworker",
+    "sex": "m",
+    "face": "weathered",
+    "hair": "bandana"
+  },
+  {
+    "id": "dock_mender",
+    "tier": "Worker",
+    "job": "Dock mender",
+    "sex": "f",
+    "face": "soft",
+    "hair": "tucked_bob"
+  },
+  {
+    "id": "watchmaker",
+    "tier": "Middle",
+    "job": "Watchmaker",
+    "sex": "m",
+    "face": "focused",
+    "hair": "swept"
+  },
+  {
+    "id": "bookseller",
+    "tier": "Middle",
+    "job": "Bookseller",
+    "sex": "f",
+    "face": "warm",
+    "hair": "ribbon_bun"
+  },
+  {
+    "id": "court_envoy",
+    "tier": "Noble",
+    "job": "Court envoy",
+    "sex": "m",
+    "face": "steady",
+    "hair": "wave"
+  },
+  {
+    "id": "salon_patron",
+    "tier": "Noble",
+    "job": "Salon patron",
+    "sex": "f",
+    "face": "sharp",
+    "hair": "chignon"
+  },
+  {
+    "id": "blonde",
+    "tier": "Noble",
+    "job": "Blonde",
+    "sex": "f",
+    "face": "blonde",
+    "hair": "centered_braid",
+    "outfit_variants": false
+  }
+]

@@ -1,0 +1,11 @@
+EMBERWAKE — Pistol v07 / 2026-10-29
+
+User-approved: small gun uses one firing pose like staff, with visible bullet flight. Magazine capacity and reload time belong to weapon definition. Initial base capacity10 rounds, reload0.5seconds, gun spins while reloading. Preserve accepted heroine and four previous weapons, including enlarged fireball.
+
+Implementation tuning choices: one plain physical bullet per shot, damage18, muzzle range7.0, speed18, radius0.10, knockback0.8. Windup0.045s, active0.055s, recovery0.16s, total0.26s. One shot event and one round consumed at release; early release still completes, hold repeats. R manually reloads a partial magazine; empty automatically reloads after shot recovery. Reserve ammunition is unlimited in this focused weapon trial. Full magazines cannot reload. No shot, weapon switch or dodge during the0.5s reload, normal walking permitted.
+
+Pistol rigid grip-to-muzzle length0.72, grip radius0.48 and height0.80. Rest/release aim pitch0.0. Minimal recoil lifts barrel slightly and returns continuously. Reload spin is one full screen-plane turn around the tiny attached hand, using sample.screen_roll from0toTAU while keeping grip fixed. No thrown gun, orbit, charge, multi-shot or three-hit combo.
+
+Magazine is a separate reusable model configured by magazine_capacity/reload_time keys in that weapon's definition. Preserve remaining pistol rounds across weapon switches; refill/reset on new practice/combat run. Pause freezes reload/flight; death/menu reset reload and clear harmful projectiles. Switching cannot refill rounds or bypass an active reload.
+
+Five selectable families: pistol→staff→mace→greatsword→sword→pistol; G or existing HUD button. Launch with pistol selected. R is reload; T is restart for all weapons, shown in HUD/README. Staff stays always fire; bullets are physical and do not acquire fire visuals or burn effects. Reuse swept first-contact flight and pre-muzzle safety, rather than duplicate collision code.

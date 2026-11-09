@@ -1,0 +1,13 @@
+EMBERWAKE — Fire Staff v06 / 2026-10-29
+
+v06 visual revision: enlarge only the fireball sprite by50% (.36→.54 visible head diameter). The hot core stays at the same muzzle/contact center; collision radius.18, flight range6.0, speed8.5, damage24 and firing timing remain unchanged.
+
+User-approved behavior: one basic firing animation, one fire-element projectile per attack, limited flight range, removed on the first monster hit. Hold repeats the same shot. Preserve the accepted chibi heroine and three melee weapons.
+
+Implementation choice: extend the current Godot 4.7.2 project with a separate staff motion model and friendly projectile manager. Projectile flight uses swept first-contact collision so large frames cannot pierce targets or cover. Reuse existing actual damage/kill feedback; no explosion, burn damage or extra skill system is added.
+
+Initial tunable values (implementation choices, open to feel review): fire damage24, muzzle range6.0 world units, speed8.5 units/second, collision radius0.18, knockback1.4. Windup0.14s, release0.07s, recovery0.32s, total0.53s. Staff physical length1.45, one release event at0.14s even after early click release. Aim locks for the committed shot and refreshes on the next shot. No automatic forward lunge.
+
+The fire element is explicit in the attack/projectile definitions; existing enemies have no resistance system. Fire means direct fire damage and orange/yellow flame visuals and impact, without an added damage-over-time effect.
+
+Four selectable weapons: staff → mace → greatsword → sword → staff, using G or the existing HUD button. Launch v05 with staff selected. Block switching during committed attacks/dodges. Existing melee stats and behavior stay intact.

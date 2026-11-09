@@ -1,0 +1,136 @@
+{
+  "method": "built-in image_gen",
+  "transparent_background": true,
+  "assets": [
+    {
+      "name": "waterfront",
+      "file": "outputs\\AshenVow-Emberwake-v95\\assets\\city_backdrop\\waterfront.png",
+      "size": [
+        2172,
+        724
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8361091185657743,
+      "used_rect": [
+        0,
+        21,
+        2172,
+        696
+      ],
+      "alpha64_rect": [
+        6,
+        332,
+        2170,
+        509
+      ],
+      "used_aspect": 3.2177777777777776,
+      "solid_neon_pixels": 0,
+      "sha256": "cffa85ec75e47a62a64678192137977b3134014d6170970e2eab5a2096a2ce1b",
+      "source_path": "C:/Users/nekot/.codex/generated_images/01a17dbf-1cf5-7fd3-a26b-ad79cf57bce9/exec-d2d294c9-9f16-418e-8f38-4f42a1d85fdd.png",
+      "render_visible_rect": [
+        6,
+        332,
+        2164,
+        177
+      ],
+      "render_visible_aspect": 12.225988700564972,
+      "world_layout": {
+        "center_x": 170,
+        "z": -250,
+        "width": 430,
+        "base_y": -0.36,
+        "height": 35.17097966728281
+      }
+    },
+    {
+      "name": "rooftops",
+      "file": "outputs\\AshenVow-Emberwake-v95\\assets\\city_backdrop\\rooftops.png",
+      "size": [
+        2172,
+        724
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.7242128598028144,
+      "used_rect": [
+        0,
+        35,
+        2172,
+        724
+      ],
+      "alpha64_rect": [
+        7,
+        245,
+        2165,
+        547
+      ],
+      "used_aspect": 3.1523947750362846,
+      "solid_neon_pixels": 0,
+      "sha256": "36b621638b0b517bd986f3f72a1828d22a6a47472b66e4736d1811f5356bc844",
+      "source_path": "C:/Users/nekot/.codex/generated_images/01a17dbf-1cf5-7fd3-a26b-ad79cf57bce9/exec-37a0dd9a-a873-4244-84af-182acfdeab1e.png",
+      "render_visible_rect": [
+        7,
+        245,
+        2158,
+        302
+      ],
+      "render_visible_aspect": 7.145695364238411,
+      "world_layout": {
+        "center_x": -10,
+        "z": -330,
+        "width": 300,
+        "base_y": -0.36,
+        "height": 41.98331788693235
+      }
+    },
+    {
+      "name": "skyline",
+      "file": "outputs\\AshenVow-Emberwake-v95\\assets\\city_backdrop\\skyline.png",
+      "size": [
+        2172,
+        724
+      ],
+      "alpha_range": [
+        0,
+        255
+      ],
+      "transparent_fraction": 0.8006407517068058,
+      "used_rect": [
+        0,
+        19,
+        2172,
+        724
+      ],
+      "alpha64_rect": [
+        0,
+        266,
+        2158,
+        519
+      ],
+      "used_aspect": 3.0808510638297872,
+      "solid_neon_pixels": 0,
+      "sha256": "4ff042c91a7d3729338930f4050a6975e375590bb8cc120721d049918dd3c87c",
+      "source_path": "C:/Users/nekot/.codex/generated_images/01a17dbf-1cf5-7fd3-a26b-ad79cf57bce9/exec-7a72280b-1368-4549-9ee6-aa7ae45606b8.png",
+      "render_visible_rect": [
+        0,
+        266,
+        2158,
+        253
+      ],
+      "render_visible_aspect": 8.529644268774703,
+      "world_layout": {
+        "center_x": 130,
+        "z": -430,
+        "width": 650,
+        "base_y": -0.36,
+        "height": 76.20481927710843
+      }
+    }
+  ],
+  "render_note": "Original PNG bytes retained. Raw any-alpha bounding boxes include weak specks. Native material uses .25 cutout threshold and explicit UV scale/offset to alpha>=64 bounds, preserving square source pixels at distinct fixed world depths."
+}

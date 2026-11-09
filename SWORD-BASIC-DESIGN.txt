@@ -1,0 +1,6 @@
+Ordinary sword basic redesign v10
+Right-to-left -> reverse -> descending diagonal. No charge.
+Damage18/19/34; reaches2.10/2.20/2.55 match mace exactly.
+Rigid blade1.90, arcs1.35/1.45/1.55 radians; short outer14% edge trail only.
+Prior v09 sword motion/render/effects preserved at reference/legacy-sword for future skills.
+Other weapons and ranged projectile art remain accepted versions.

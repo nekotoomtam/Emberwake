@@ -1,0 +1,6 @@
+{
+  "asset": "forest-moss-patch.png",
+  "method": "built-in image_gen",
+  "transparent_background": true,
+  "prompt": "Use case: stylized-concept. Generate ONE transparent game terrain decal for Emberwake, a dark woodland action RPG with 2D pixel artwork on a 3D floor. Direct overhead orthographic, flat ground: one broad irregular asymmetrical mat of short forest grass and forest-floor moss spreading horizontally, with 3 connected irregular lobes in olive-green, moss green, muted fern green and dark green. Crisp deliberate 16-bit pixel clusters and a muted natural palette. Build areas of green mass with a few low small grasses on its ragged edges, with distinct gaps between outward tufts, a broken thin pixel edge that blends into bare earth when composited. Very modest highlight contrast suitable below characters, enough green coverage across the middle, no terrain height illusion, no hard shadows, no scenery or trees, no text, no border, no rocks larger than a few pixels, no checkerboard, no opaque rectangle, no visible tiling. Fill around 85 percent of the width with some fully transparent padding around it on every side. Only this patch on true alpha transparent background. Think of a flat hand-painted 2D pixel sprite intended to be sampled at a small size within a top-down game."
+}

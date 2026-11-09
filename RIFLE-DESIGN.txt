@@ -1,0 +1,13 @@
+EMBERWAKE — Rifle v08 / 2026-10-29
+
+User request: slow powerful rifle,5rounds, longer reload than pistol, small backward movement every shot, spent casings, and only short penetration beyond first enemy. Nearby aligned targets should be hit; separated ones should not. Balance remains provisional.
+
+Initial tuning choices:49.5physical damage (2.75×pistol18),5rounds,reload1.2s,windup.11/active.075/recovery.415=.60s per shot,range9,speed22,radius.10,knockback2.0. R reload,T restart,G cycle six weapons. Rifle/pistol magazines independent and persist across switches; resets on a new run. Empty automatically reloads after recovery, manualpartialreload allowed. Unlimited reserve ammo as existing trial. Walk during reload; no firing/dodge/switch during reload.
+
+One normal firing pose, no charge/spread/extra projectile. Rigid rifle length1.35,gripradius.42,height.80,pitchrest/release0. Subtle barrel lift after release. Cumulative recoil_offset rises0→.22world units over.12s after release; root applies backward along locked shot aim through existing ShortLunge collision logic with its own instance. Normal movement suppressed while committed, so every free-space shot produces the small backward step. Cover/enemies can safely clip it; never teleport through geometry.
+
+Short penetration: after FIRST enemy contact, compute that enemy's swept exit surface and permit only.55more world units beyond it, clipped by original range9. Subsequent targets inside that fixed cutoff may take damage once each. Never refresh or extend cutoff on later hits. Nearest-first, dead/duplicate target guards, cover priority, high-delta swept collision and pre-muzzle safety still apply. Legacy staff/pistol with no pierce_after_exit retain first-hit removal exactly.
+
+Casings: one visible brass shell per successful rifle shot, side/up ejection with gravity, tiny spin/bounce thenfade; visual-only, bounded activecount. Pause freezes; newrun/menu/death/victory clear. Expose spawned_count for native proof. No gun-spin rifle reload: lower/tilt the long gun briefly and return as reload finishes. Pistol keeps its accepted spin.
+
+Default rifle; cycle rifle→pistol→staff→mace→greatsword→sword→rifle. Preserve all accepted old weapon tuning/art, especially enlarged fireball. Separate rifle_motion.gd, rifle_art.gd and casing_fx.gd; reuse Magazine and swept projectile manager. Numeric tuning can be changed later, no unrelated RPG systems.

@@ -1,0 +1,81 @@
+{
+  "study": "Four authored standing directions plus harbor idle/walk/coffee integration",
+  "reference_image": "approved-concept.png",
+  "reference_generation": "Built-in image_gen; original concept displayed and approved in this chat",
+  "sprite_generation": "Original GDScript pixel clusters on a 32x32 logical grid, nearest enlarged to 128x128",
+  "scope": "New default appearance in the harbor prologue; old appearance selectable; legacy combat art unchanged",
+  "layers": [
+    "head",
+    "torso",
+    "right_arm",
+    "left_arm",
+    "right_leg",
+    "left_leg"
+  ],
+  "bag": "Separate prop; not baked into the standing body image",
+  "directions": [
+    "right",
+    "front",
+    "left",
+    "back"
+  ],
+  "layers_per_direction": 6,
+  "approved_right_pose_sha256": "823d7a111cae015f1712e004c5ee1b784c54f8710b9f09227d6a67622e7f3b61",
+  "appearance_profile": "scripts/opening/harbor_hero_appearance.gd",
+  "new_image_generation_this_increment": false,
+  "front_eye_revision": {
+    "version": 108,
+    "scope": "Front eyes only, following user review of eye imbalance",
+    "changed_logical_pixels": 6,
+    "preserved": "Hair, nose, mouth, clothes, registration and the other three directions",
+    "before": "revisions/v107-front-128.png"
+  },
+  "front_eye_npc_style_revision": {
+    "version": 109,
+    "scope": "Only front eyes, based on actual feminine NPC lash/iris/glint layout",
+    "source": "scripts/opening/harbor_human_art.gd",
+    "logical_grid": [
+      32,
+      32
+    ],
+    "export_frame": [
+      128,
+      128
+    ],
+    "sprite_pixel_size": 0.018,
+    "changed_logical_pixels": 16,
+    "preserved": "Grey-green iris, every non-eye front pixel, other three directions and gameplay",
+    "before": "revisions/v108-front-128.png"
+  },
+  "front_eye_compact_revision": {
+    "version": 110,
+    "reason": "User rejected v109 eyes as too large for the face",
+    "logical_eye_footprint_before": [
+      4,
+      3
+    ],
+    "logical_eye_footprint_after": [
+      3,
+      2
+    ],
+    "changed_logical_pixels": 14,
+    "preserved": "All non-eye front pixels and other three views; same grey-green iris",
+    "before": "revisions/v109-front-128.png"
+  },
+  "front_mouth_revision": {
+    "version": 111,
+    "reason": "User accepted eyes and requested a smaller mouth",
+    "before_frame_pixels": [
+      4,
+      4
+    ],
+    "after_frame_pixels": [
+      2,
+      2
+    ],
+    "changed_texture_pixels": 12,
+    "scope": "Only within the original front mouth cell; all accepted eyes and other face/body/view pixels preserved",
+    "animation": "Refinement applied after logical-grid enlargement in actual front idle/walk/carry",
+    "before": "revisions/v110-front-128.png"
+  }
+}

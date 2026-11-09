@@ -1,0 +1,187 @@
+[
+  {
+    "id": "ropeworker",
+    "hair": "bandana",
+    "sex": "f"
+  },
+  {
+    "id": "dock_mender",
+    "hair": "tucked_bob",
+    "sex": "f"
+  },
+  {
+    "id": "watchmaker",
+    "hair": "swept",
+    "sex": "f"
+  },
+  {
+    "id": "bookseller",
+    "hair": "ribbon_bun",
+    "sex": "f"
+  },
+  {
+    "id": "court_envoy",
+    "hair": "wave",
+    "sex": "f"
+  },
+  {
+    "id": "salon_patron",
+    "hair": "chignon",
+    "sex": "f"
+  },
+  {
+    "id": "blonde",
+    "hair": "centered_braid",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m01",
+    "hair": "Rider's low tail",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m02",
+    "hair": "Mariner twin plaits",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m03",
+    "hair": "Long tied rope",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m04",
+    "hair": "High knot and loose locks",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m05",
+    "hair": "Low coiled knot",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m06",
+    "hair": "Shoulder-length waves",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m07",
+    "hair": "Straight split fringe",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m08",
+    "hair": "Half-up scholar",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m09",
+    "hair": "Wrapped temple knot",
+    "sex": "f"
+  },
+  {
+    "id": "hair_m10",
+    "hair": "Long layered mane",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f01",
+    "hair": "High ribbon bun",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f02",
+    "hair": "Side-swept chignon",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f03",
+    "hair": "Twin braids and rounded bangs",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f04",
+    "hair": "Twin buns and pointed bangs",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f05",
+    "hair": "Loose braid and side fringe",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f06",
+    "hair": "Long waves and curtain bangs",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f07",
+    "hair": "Hime cut with straight bangs",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f08",
+    "hair": "Half-up ribbon and soft fringe",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f09",
+    "hair": "Long twin tails",
+    "sex": "f"
+  },
+  {
+    "id": "hair_f10",
+    "hair": "Crown braid and long side locks",
+    "sex": "f"
+  },
+  {
+    "id": "hair_short01",
+    "hair": "Dockside buzz",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short02",
+    "hair": "Worker's blunt crop",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short03",
+    "hair": "Officer's side part",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short04",
+    "hair": "Tapered brush-up",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short05",
+    "hair": "Short swept quiff",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short06",
+    "hair": "Compact curls",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short07",
+    "hair": "Close comb-back",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short08",
+    "hair": "Short side-swept fringe",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short09",
+    "hair": "High taper / close sides",
+    "sex": "m"
+  },
+  {
+    "id": "hair_short10",
+    "hair": "Short broken wave",
+    "sex": "m"
+  }
+]
