@@ -10,6 +10,7 @@ var anatomy_panel
 var body_lab_open:=false
 var _crawl_still:=.25
 var _body_key:=""
+const CharacterStats = preload("res://scripts/character_stats.gd")
 var stats=preload("res://data/player_base_stats.tres").duplicate(true)
 var energy=preload("res://scripts/stamina_rules.gd").new()
 var combat_rng:=RandomNumberGenerator.new()
@@ -33,6 +34,7 @@ const ArmorPierce = preload("res://scripts/armor_pierce_motion.gd")
 const Hero = preload("res://scripts/hero_visual.gd")
 var use_cutout_avatar := false
 var expedition_starting_flasks := -1
+var expedition_leader_attributes: Dictionary = {}
 var expedition_companions: Array[Dictionary] = []
 const Companion = preload("res://scripts/expedition_companion.gd")
 var companions: Array[Companion] = []
@@ -164,11 +166,23 @@ var mode: String = "menu"
 var wave: int = 0
 var kills: int = 0
 var hits: int = 0
+const SANITY_REVELATION := 100
+const FRENZY_THRESHOLD := 200
+const FRENZY_ATTACK_RANGE := 15.0
+const CRITICAL_SANITY_PER_HIT := 5
+const FRENZY_ROOM_RECOVERY := 30
+var sanity := 0
+var frenzy := false
+var _sanity_marked := false
+var _health_before_frenzy := 0.0
 var health: float = 100.0
+var mana: float = stats.value("max_mana")
 var stamina: float = 100.0
 var total_damage: float = 0.0
 var run_time: float = 0.0
 var move_input := Vector2.ZERO
+var arrival_motion := Vector3.ZERO
+var _arrival_locked := false
 var test_aim := Vector3.ZERO
 var aim := Vector3.RIGHT
 var debug_range: bool = false
@@ -463,6 +477,7 @@ func finish_coast() -> void:
 	_cancel_body_actions();clear_hostile_projectiles();fx.clear_transients();staff_flight.clear();ground_fire.clear();casing_fx.clear();reset_gun_magazines();_held=false;mode="victory";audio.play("victory");ui.show_mode(mode)
 func start_dungeon(seed_value: int = -1) -> void:
 	start_run(true)
+	_apply_expedition_attributes()
 	if expedition_starting_flasks >= 0:
 		flasks.charges = expedition_starting_flasks
 	arena.free()
@@ -536,11 +551,16 @@ func _set_arena(harbor: bool) -> void:
 	arena.free();arena=HarborArena.new() if harbor else Arena.new();add_child(arena);_harbor_mode=harbor;_coast_mode=false
 func start_run(practice: bool = false,harbor: bool=false) -> void:
 	_end_room_fade()
+	stats.attributes = {}
 	for companion in companions:
 		remove_child(companion)
 		companion.queue_free()
 	companions.clear()
 	_set_arena(harbor);encounter_mode="captain" if harbor else "";player.collision_mask=1
+	sanity = 0
+	frenzy = false
+	_sanity_marked = false
+	_health_before_frenzy = 0.0
 	anatomy.bind_max_hp(stats.value("max_health"));anatomy.reset();flasks.reset();body_lab_open=false;_crawl_still=.25;_body_key=anatomy.capability_key()
 	readiness.reset();rewards.reset();energy.reset()
 	if is_instance_valid(vision):vision.reset_cues()
@@ -558,6 +578,7 @@ func start_run(practice: bool = false,harbor: bool=false) -> void:
 	total_damage = 0
 	health = max_health()
 	stamina = stats.value("max_stamina")
+	mana = stats.value("max_mana")
 	reset_gun_magazines()
 	run_time = 0
 	motion.reset()
@@ -901,7 +922,19 @@ func request_dodge(direction: Vector3 = Vector3.ZERO) -> bool:
 	fx.ring(player.position, 0.6, Color(0.5, 0.9, 0.9, 0.5), 0.22)
 	return true
 
+func set_arrival_lock(locked: bool) -> void:
+	_arrival_locked = locked
+	ui.visible = not locked
+	anatomy_panel.visible = not locked
+	set_process(not locked)
+	set_physics_process(not locked)
+	set_process_input(not locked)
+	set_process_unhandled_input(not locked)
+
+
 func _movement() -> Vector3:
+	if _arrival_locked:
+		return arrival_motion
 	if encounter_mode=="wreck_shore" and not arena.intro_done():return Vector3.ZERO
 	var input := move_input if move_input.length_squared() > 0 else Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var right := camera.global_basis.x
@@ -1059,8 +1092,9 @@ func _tick_frame(delta: float) -> void:
 	var before_energy: float=stamina
 	stamina=energy.recover(stamina,delta,stats,energy_busy,right_action() in ["aim","guard"] or guns_reloading())
 	if not anatomy.functional("torso"):stamina=before_energy+(stamina-before_energy)*.25
-	health=flasks.advance(delta,health,max_health())
-	health=minf(max_health(),health+stats.value("health_regen")*delta)
+	if not frenzy:
+		health = flasks.advance(delta, health, max_health())
+		health = minf(max_health(), health + stats.value("health_regen") * delta)
 	var rifle_ready_this_frame:=false
 	var current_mag=active_magazine()
 	if primary_family()=="rifle" and current_mag.bolt_active:
@@ -1146,6 +1180,10 @@ func _tick_frame(delta: float) -> void:
 				fx.sector(_hand_origin() + Vector3(0, 0.69, 0), definition.reach, step.current_angle - swing_sign * 0.4, step.current_angle, Color(1, 1, 0.85, 0.9), definition.reach - 0.07, 0.09)
 			_trail_clock = 0.02
 		if step.get("damage_ready", step.active):
+			if encounter_mode == "dungeon" and is_instance_valid(arena.hazards):
+				var root_ambush = arena.hazards.root_ambush
+				if root_ambush != null and root_ambush.try_melee(_hand_origin(), motion, step.previous_angle, step.current_angle):
+					audio.play("guard")
 			if slam:
 				var tip: Vector3 = _hand_origin() + Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle)) * definition.reach
 				fx.lane(_hand_origin(), motion.aim_angle, definition.reach, definition.width, Color(1, 0.78, 0.38, 0.24), 0.14)
@@ -1499,6 +1537,7 @@ func _present_frame(delta: float) -> void:
 	for companion in companions: companion.present(camera, delta, companion == nearby)
 	_present_party_mark()
 	if encounter_mode == "dungeon":
+		arena.present_revelation(has_sanity_revelation(), player.global_position)
 		arena.update_peek_hints(player.global_position, _can_peek_dungeon_exit())
 	if encounter_mode=="dungeon" and dungeon.remaining==0:
 		vision.fog.hide();vision.indicator.hide()
@@ -1520,6 +1559,20 @@ func _present_frame(delta: float) -> void:
 		anatomy_panel.refresh();anatomy_panel.compact.visible=encounter_mode not in ["village_study","coast_forms","wreck_shore"]
 	if encounter_mode=="wreck_shore" and mode=="practice" and arena.exit_reached:
 		_cancel_body_actions();mode="shore_end";arena.present(self);ui.show_mode(mode)
+
+func _apply_expedition_attributes() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	if expedition_leader_attributes.is_empty():
+		expedition_leader_attributes = CharacterStats.roll_level_one(rng)
+	stats.attributes = expedition_leader_attributes.duplicate()
+	for recruit in expedition_companions:
+		if not recruit.has("attributes"):
+			recruit.attributes = CharacterStats.roll_level_one(rng)
+	health = max_health()
+	stamina = stats.value("max_stamina")
+	mana = stats.value("max_mana")
+
 
 func _spawn_expedition_companions() -> void:
 	for index in expedition_companions.size():
@@ -1548,6 +1601,8 @@ func mark_party_cursor() -> void:
 	var ray := camera.project_ray_normal(_mouse_position)
 	if absf(ray.y) < .001: return
 	var point := origin + ray * (-origin.y / ray.y)
+	if has_sanity_revelation() and is_instance_valid(arena.hazards) and arena.hazards.root_ambush != null:
+		point = arena.hazards.root_ambush.mark_point(point)
 	var target: Node3D
 	var nearest := 30.0 * 30.0
 	for enemy in enemies:
@@ -1599,7 +1654,7 @@ func try_peek_dungeon_exit() -> bool:
 	readiness.release()
 	dungeon.prepare_room(next, -direction)
 	dungeon.rooms[next].scouted = true
-	dungeon_peek.open(dungeon.rooms[next], direction, camera.global_basis, vision.reach(), _create_enemy)
+	dungeon_peek.open(dungeon.rooms[next], direction, camera.global_basis, vision.reach(), _create_enemy, has_sanity_revelation())
 	return true
 
 func _nearby_downed_companion() -> Companion:
@@ -1696,7 +1751,7 @@ func spawn_enemy(kind: String, where: Vector3) -> Node3D:
 func spawn_wave() -> void:
 	wave += 1
 	_wave_wait = 0
-	health = minf(max_health(), health + 16)
+	if not frenzy: health = minf(max_health(), health + 16)
 	stamina = stats.value("max_stamina")
 	var types: Array = ["melee", "melee", "melee"] if wave == 1 else (["melee", "melee", "ranged", "ranged"] if wave == 2 else ["elite", "melee", "melee", "ranged"])
 	var locations: Array[Vector3] = [Vector3(-4.0, 0.03, -3.5), Vector3(4.5, 0.03, -3.0), Vector3(3.8, 0.03, 3.2), Vector3(-4.0, 0.03, 3.5)]
@@ -1750,19 +1805,53 @@ func enemy_hit(enemy, damage: float, knock: Vector3, element: String = "",slam_s
 		audio.play("enemy_death")
 		if vision.can_see(enemy.position):fx.burst(enemy.position + Vector3(0, 0.6, 0), Color("#ef9f60"), 14,enemy.position)
 
+func frenzy_threshold() -> int:
+	return FRENZY_THRESHOLD
+
+
+func has_sanity_revelation() -> bool:
+	return _sanity_marked
+
+
+func add_sanity(amount: int) -> void:
+	if mode not in ["combat", "practice"]: return
+	sanity = maxi(SANITY_REVELATION if _sanity_marked else 0, sanity + amount)
+	_sanity_marked = _sanity_marked or sanity >= SANITY_REVELATION
+	var next_frenzy := sanity > frenzy_threshold()
+	if next_frenzy == frenzy: return
+	frenzy = next_frenzy
+	if frenzy:
+		_health_before_frenzy = health
+		health = 0.0
+		flasks.cancel_effects()
+	else:
+		health = minf(_health_before_frenzy, max_health())
+		_health_before_frenzy = 0.0
+
+
+func enemy_attack_parryable(base_parryable: bool, origin: Vector3) -> bool:
+	if not base_parryable: return false
+	if not frenzy: return true
+	var offset := Vector2(origin.x - player.global_position.x, origin.z - player.global_position.z)
+	return offset.length_squared() > FRENZY_ATTACK_RANGE * FRENZY_ATTACK_RANGE
+
+
+func reward_dungeon_clear_health() -> void:
+	if mode != "combat": return
+	if frenzy:
+		add_sanity(-FRENZY_ROOM_RECOVERY)
+	else:
+		health = minf(max_health(), health + max_health() * .22)
+
+
 func receive_forest_poison(amount: float, integrity_loss: float) -> void:
-	var previous := health
-	damage_player(amount, Vector3.INF, 0.0, "poison", "torso", 0.0, false, &"area")
-	if health < previous:
-		anatomy.reduce_all_integrity(integrity_loss)
-		_sync_body_state()
+	damage_player(amount, Vector3.INF, 0.0, "poison", "torso", 0.0, false, &"area", integrity_loss)
 
 
-func damage_player(amount: float,source: Vector3=Vector3.INF,guard_cost: float=1.0,element: String="physical",body_part: String="torso",body_amount: float=-1,red: bool=false,delivery: StringName=&"melee") -> void:
+func damage_player(amount: float,source: Vector3=Vector3.INF,guard_cost: float=1.0,element: String="physical",body_part: String="torso",body_amount: float=-1,red: bool=false,delivery: StringName=&"melee",all_part_loss: float=0.0) -> void:
 	if mode not in ["combat","practice"] or body_lab_open or (_iframes>0 or rewards.invulnerable() or _dodge_step_protected) or not is_finite(amount) or amount<=0:return
 	max_health() # Bind part capacities before applying raw body damage.
 	var body_damage: float=stats.incoming(body_amount if body_amount>=0 else amount*.2,element)
-	red=red or health<=0
 	amount=stats.incoming(amount,element)
 	var guarded:=false
 	var holding_guard := right_action() == "guard"
@@ -1785,14 +1874,28 @@ func damage_player(amount: float,source: Vector3=Vector3.INF,guard_cost: float=1
 		fx.parry_clash(_guard_contact_point(source),false);fx.number(player.position+Vector3.UP*1.8,"BLOCK",false);audio.play("guard")
 		if amount <= 0.000001: return
 	var previous_health := health
-	health=maxf(0,health-amount)
-	if health < previous_health: _cancel_revive()
+	var count_sanity := not frenzy and previous_health <= 0.0
+	var track_parts := previous_health <= 0.0 or is_instance_valid(revive_target)
+	var previous_parts: Dictionary = anatomy.integrity.duplicate() if track_parts else {}
+	if not frenzy:
+		health = maxf(0.0, health - amount)
 	# A split limb segment has half the original limb HP budget.
 	if body_part in anatomy.PARTS and body_part not in ["head", "torso"]:body_damage *= .5
-	anatomy.damage(body_part,body_damage,red)
+	anatomy.damage(body_part, body_damage, red)
+	if all_part_loss > 0.0:
+		anatomy.reduce_all_integrity(all_part_loss)
+	var part_injured: bool = track_parts and anatomy.integrity != previous_parts
+	if health < previous_health or part_injured:
+		_cancel_revive()
 	_sync_body_state()
+	if count_sanity and part_injured:
+		add_sanity(CRITICAL_SANITY_PER_HIT)
 	_iframes=0.0 if guarded else .5;_hurt=.17;_shake=.1
-	fx.number(player.position+Vector3.UP*1.7,"-%d"%int(amount),true);audio.play("hit")
+	if health < previous_health:
+		fx.number(player.position + Vector3.UP * 1.7, "-%d" % int(previous_health - health), true)
+	elif part_injured:
+		fx.number(player.position + Vector3.UP * 1.7, "ชิ้นส่วนเสียหาย", true)
+	audio.play("hit")
 
 func _die_from_body() -> void:
 	if is_instance_valid(brine_zones):brine_zones.clear()
@@ -1816,20 +1919,18 @@ func shoot(where: Vector3,direction: Vector3,damage: float,parryable: bool=false
 		var quad:=QuadMesh.new();quad.size=Vector2(.85,.425) if owner_enemy.kind=="harpooner" else Vector2(.30,.30);bolt.mesh=quad
 		if owner_enemy.has_method("projectile_size"):quad.size=owner_enemy.projectile_size()
 		quad.center_offset=preload("res://scripts/projectile_image_geometry.gd").quad_offset(texture,quad.size,owner_enemy.coastal_projectile_style())
-		var mat:=StandardMaterial3D.new();mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED;mat.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA;mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_NEAREST;mat.albedo_texture=texture;mat.albedo_color=Color.WHITE;mat.no_depth_test=true;mat.cull_mode=BaseMaterial3D.CULL_DISABLED;bolt.material_override=mat
+		var mat:=StandardMaterial3D.new();mat.shading_mode=BaseMaterial3D.SHADING_MODE_UNSHADED;mat.transparency=BaseMaterial3D.TRANSPARENCY_ALPHA;mat.texture_filter=BaseMaterial3D.TEXTURE_FILTER_NEAREST;mat.albedo_texture=texture;mat.albedo_color=Color.WHITE if parryable else Color("#ff3939");mat.no_depth_test=true;mat.cull_mode=BaseMaterial3D.CULL_DISABLED;bolt.material_override=mat
 		bolt.basis=camera.global_basis;bolt.rotate_object_local(Vector3.BACK,atan2(direction.dot(camera.global_basis.y),direction.dot(camera.global_basis.x)))
 	bolt.position = where
 	add_child(bolt)
 	var contact_pin:=MeshInstance3D.new();contact_pin.name="ContactPin";var pin_mesh:=SphereMesh.new();pin_mesh.radius=.035;pin_mesh.height=.07;contact_pin.mesh=pin_mesh
 	contact_pin.material_override=fx.tint(Color("70fff1"));contact_pin.visible=debug_range;bolt.add_child(contact_pin)
 	direction.y = 0
-	projectiles.append({"node": bolt, "direction": direction.normalized(), "damage":damage,"life":max_range/5.5,"parryable":parryable,"owner_enemy":owner_enemy,"guard_cost":guard_cost,"body_part":body_part,"body_amount":body_amount,"base_parryable":parryable,"defer_step":_enemy_tick_phase})
+	projectiles.append({"node": bolt, "direction": direction.normalized(), "damage":damage,"life":max_range/5.5,"parryable":parryable,"owner_enemy":owner_enemy,"guard_cost":guard_cost,"body_part":body_part,"body_amount":body_amount,"defer_step":_enemy_tick_phase})
 	audio.play("enemy_attack")
 
 func _update_projectiles(delta: float) -> void:
 	for entry in projectiles.duplicate():
-		entry.parryable=bool(entry.get("base_parryable",entry.parryable)) and health>0
-		if not entry.parryable:entry.node.material_override.albedo_color=Color("#ff3939")
 		# Enemy windup expires at the end of this interval; its new bolt starts now.
 		if entry.get("defer_step",false):
 			entry.defer_step=false
@@ -2056,7 +2157,6 @@ func _can_parry() -> bool:
 	return mode in ["practice","combat"] and not anatomy.dead() and not inventory_open and not stats_open and _dodge_left<=0 and not motion.busy and not skill_active and not pair_strikes.active and not guns_reloading() and readiness.broken_left<=0
 func incoming_attack(amount: float,source: Vector3,parryable: bool,attacker: Node=null,guard_cost: float=1.0,body_part: String="torso",body_amount: float=-1,delivery: StringName=&"melee") -> void:
 	if mode not in ["practice","combat"] or (_iframes>0 or rewards.invulnerable() or _dodge_step_protected) or not is_finite(amount) or amount<=0:return
-	parryable=parryable and health>0
 	if parryable and primary_family() in ReadyRules.MELEE and _can_parry() and readiness.try_parry(source,player.position,aim,stamina,ReadyRules.PARRY_COST*stats.value("stamina_cost_multiplier")*anatomy.action_cost_multiplier()):
 		_spend_stamina(ReadyRules.PARRY_COST*stats.value("stamina_cost_multiplier")*anatomy.action_cost_multiplier())
 		if is_instance_valid(attacker) and attacker.has_method("receive_parry"):attacker.receive_parry()
@@ -2339,7 +2439,7 @@ func max_health() -> float:
 	anatomy.bind_max_hp(stats.value("max_health"))
 	return stats.value("max_health")*anatomy.hp_multiplier()
 func use_health_flask() -> bool:
-	if mode not in ["practice","combat"] or inventory_open or stats_open or not body_action_ready() or flasks.charges<=0 or health>=max_health():return false
+	if frenzy or mode not in ["practice","combat"] or inventory_open or stats_open or not body_action_ready() or flasks.charges<=0 or health>=max_health():return false
 	health=flasks.drink(health,max_health())
 	_visual_tick(0)
 	return true
@@ -2383,7 +2483,7 @@ func set_body_integrity(part: String,value: float) -> void:
 func remove_body_part(part: String) -> void:
 	anatomy.remove(part);_sync_body_state();_visual_tick(0)
 func hit_body_part(part: String,value: float,red: bool=false) -> void:
-	max_health();anatomy.damage(part,value,red or health<=0);_sync_body_state();_visual_tick(0)
+	max_health();anatomy.damage(part,value,red);_sync_body_state();_visual_tick(0)
 func restore_body_part(part: String) -> void:
 	anatomy.restore(part);_sync_body_state();_visual_tick(0)
 func restore_body() -> void:

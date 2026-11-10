@@ -33,8 +33,8 @@ func run() -> void:
   await process_frame
   await process_frame
   var rect: Rect2=panel.compact.get_global_rect()
-  expect(rect.position.is_equal_approx(Vector2(20,124)),"Compact anchor at %s: %s"%[viewport,rect])
-  expect(rect.size.x<=125 and rect.end.y<=300,"Compact fits below the health HUD")
+  expect(is_equal_approx(rect.position.x, 8) and is_equal_approx(rect.end.y, root.get_visible_rect().end.y - 8),"Compact bottom-left anchor at %s: %s"%[viewport,rect])
+  expect(rect.size.x <= 96 and root.get_visible_rect().encloses(rect),"Compact fits the bottom-left slot")
   expect(panel.surface.mouse_filter==Control.MOUSE_FILTER_IGNORE,"Closed HUD passes input")
   panel.toggle()
   await process_frame

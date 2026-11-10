@@ -284,6 +284,7 @@ func tick(game, delta: float = 0.0) -> void:
 			game.arena.hide_trap()
 			game.fx.ring(trap_position, .65, Color("#ef8058"), .42)
 			game.damage_player(12.0, Vector3.INF, 1.0, "physical", "left_shin", -1.0, false, &"area")
+	if game.mode != "combat": return
 	if not room.cleared:
 		var roster: Array = room.enemies
 		# Fading corpses keep their slots until the normal actor cleanup.
@@ -299,7 +300,7 @@ func tick(game, delta: float = 0.0) -> void:
 		cleared += 1
 		game.clear_hostile_projectiles()
 		game.arena.unlock_doors()
-		game.health = minf(game.max_health(), game.health + game.max_health() * 0.22)
+		game.reward_dungeon_clear_health()
 		game.stamina = game.stats.value("max_stamina")
 		game.flasks.charges = mini(3, game.flasks.charges + 1)
 		if current == goal:

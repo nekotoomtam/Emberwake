@@ -7,6 +7,7 @@ const SIDE_PATCHES: int = 20
 const CURVE_STEPS: int = 7
 const HullSurface = preload("res://scripts/opening/ship_hull_surface.gd")
 const BowWave = preload("res://scripts/opening/ship_bow_wave.gd")
+const Ship = preload("res://scripts/opening/departure_ship.gd")
 
 var hull: Node3D
 var cruising: float = 0.0
@@ -40,7 +41,8 @@ func tick(delta: float) -> void:
  intensity = move_toward(intensity, lerpf(.42, 1.0, drive), maxf(delta, 0.0) * 1.3)
  if is_instance_valid(hull):
   var heading: Vector3 = hull.global_basis.x
-  global_transform = Transform3D(Basis(Vector3.UP, atan2(-heading.z, heading.x)), Vector3(hull.global_position.x, SEA_LEVEL, hull.global_position.z))
+  var basis := Basis(Vector3.UP, atan2(-heading.z, heading.x)).scaled_local(Vector3(Ship.LENGTH_SCALE, 1.0, 1.0))
+  global_transform = Transform3D(basis, Vector3(hull.global_position.x, SEA_LEVEL, hull.global_position.z))
  else:
   global_position.y = SEA_LEVEL
  water_height = global_position.y

@@ -80,7 +80,7 @@ func tick(delta: float,game,advance_status: bool=true) -> void:
     if get_world_3d().direct_space_state.intersect_ray(query).is_empty():
      var delivery: StringName = &"area" if attack_data.id=="slam" else (&"projectile" if attack_data.id=="throw" else &"melee")
      var hp: float=game.health
-     game.incoming_attack(attack_data.damage,position,attack_data.base_parryable and game.health>0,self,attack_data.guard_cost,attack_data.body_part,attack_data.body_damage,delivery)
+     game.incoming_attack(attack_data.damage,position,attack_data.parryable,self,attack_data.guard_cost,attack_data.body_part,attack_data.body_damage,delivery)
      if game.health<hp:landed_count+=1
    last_tip=tip
    if state=="attack" and active_left<=0:state="recover";cooldown=attack_data.recovery
@@ -92,7 +92,7 @@ func tick(delta: float,game,advance_status: bool=true) -> void:
    if not arm_cut and distance>3:id="throw"
    var trigger: float=Rules.definition(id).trigger
    if distance<=trigger:
-    attack_data=Rules.definition(id);attack_index+=1;state="windup";telegraph_left=attack_data.windup;attack_angle=atan2(direction.z,direction.x);attack_hit=false;elapsed=0
+    attack_data=Rules.definition(id);attack_data.parryable=game.enemy_attack_parryable(attack_data.base_parryable, global_position);attack_index+=1;state="windup";telegraph_left=attack_data.windup;attack_angle=atan2(direction.z,direction.x);attack_hit=false;elapsed=0
    else:
     move = direction * 1.8
     if game.get("encounter_mode") == "dungeon":
@@ -101,7 +101,6 @@ func tick(delta: float,game,advance_status: bool=true) -> void:
   var across: float=view_right.dot(Vector3(cos(attack_angle),0,sin(attack_angle)))
   if absf(across)>.08:sprite.flip_h=across<0
  if not attack_data.is_empty() and attack_data.id=="throw" and (state=="windup" or (state=="attack" and elapsed<float(attack_data.release))):configure_throw_launch()
- if not attack_data.is_empty():attack_data.parryable=attack_data.base_parryable and game.health>0
  velocity=move;velocity.y=-2;move_and_slide()
  var pose: Dictionary=Pose.sample(attack_data,state,telegraph_left,elapsed,cooldown,attack_angle)
  sprite.animation=pose.animation if state in ["windup","attack","recover","parried"] else ("hit" if _hurt_time>0 else "walk" if move.length()>.1 else "idle")

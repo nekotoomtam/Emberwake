@@ -66,8 +66,11 @@ func _begin(game,offset: Vector3) -> void:
 func _enter_phase(index: int,game) -> void:
 	if index>=6:
 		_clear_sequence();attack_data={};state="chase";cooldown=.5;telegraph_left=0;active_left=0;return
+	var committed_parryable: bool = attack_data.get("parryable", true)
 	phase=index;phase_left=Rules.DURATIONS[index];attack_data=Rules.attack(_sequence_index,index)
-	attack_data.parryable=game.health>0
+	if index in [0, 3]:
+		committed_parryable = game.enemy_attack_parryable(attack_data.base_parryable, global_position)
+	attack_data.parryable = committed_parryable
 	state="windup" if index in [0,3] else "recover" if index==5 else "attack"
 	telegraph_left=phase_left if state=="windup" else 0.0
 	active_left=phase_left if state=="attack" else 0.0
@@ -137,7 +140,7 @@ func _pose(game) -> void:
 	elif _moved.length_squared()>.000001:
 		animation_="run";_run_clock+=_moved.length()/Rules.SPEED;frame_index=int(_run_clock/Rules.RUN_FRAME)%6
 	sprite.animation=_view+"_"+animation_;sprite.frame=frame_index
-	if state=="windup" and game.health<=0:sprite.modulate=Color(1.6,.35,.28)
+	if state=="windup" and not attack_data.get("parryable", true):sprite.modulate=Color(1.6,.35,.28)
 	elif _parry_flash>0:sprite.modulate=Color(.45,1.5,1.7)
 	var guide:=attack_data.duplicate()
 	attack_visual.position=Vector3.ZERO

@@ -11,7 +11,22 @@ var ready_text: Label
 var health_bar: ProgressBar
 var flask_button: Button
 var stamina_bar: ProgressBar
-var health_text: Label
+var sanity_panel: PanelContainer
+var sanity_frame: StyleBoxFlat
+var sanity_progress: TextureProgressBar
+var sanity_overflow: TextureProgressBar
+var sanity_wash: ShaderMaterial
+var sanity_warning: Control
+var sanity_gear_large: TextureRect
+var sanity_gear_small: TextureRect
+var _sanity_pulse_phase := 0.0
+var flask_tray: HBoxContainer
+var flask_count: Label
+var mana_bar: ProgressBar
+var frenzy_border: Panel
+var revelation_mist: ColorRect
+var _revelation_material: ShaderMaterial
+var _revelation_elapsed := 0.0
 var stage_text: Label
 var counter: Label
 var dungeon_map_panel: VBoxContainer
@@ -38,9 +53,37 @@ var stamina_fill: StyleBoxFlat
 var bow_meter: HBoxContainer
 var ammo_text: Label
 var reload_bar: ProgressBar
+const LAYOUT_ICONS = preload("res://assets/ui/combat_hud_layout.svg")
 const GOLD = Color("#edc182")
 const PAPER = Color("#e6e7dc")
 const DIM = Color("#a1b7bb")
+
+class DialBar extends ProgressBar:
+	var dial: Control
+	var tint: Color
+
+	func _draw() -> void:
+		if not is_instance_valid(dial): return
+		var rect := dial.get_global_rect()
+		var center := rect.get_center() - global_position
+		var radius := rect.size.x * .5 + 3.0
+		var leading := PackedVector2Array()
+		for i in range(9):
+			var y := size.y * i / 8.0
+			var dy := y - center.y
+			var x := center.x + sqrt(maxf(0.0, radius * radius - dy * dy))
+			leading.append(Vector2(clampf(x, 0.0, size.x), y))
+		_draw_band(leading, 1.0, Color("#141716"))
+		if ratio > 0.0:
+			_draw_band(leading, ratio, tint)
+
+	func _draw_band(leading: PackedVector2Array, fraction: float, color: Color) -> void:
+		var band := leading.duplicate()
+		for i in range(leading.size() - 1, -1, -1):
+			var edge := leading[i]
+			band.append(Vector2(lerpf(edge.x, size.x, fraction), edge.y))
+		draw_colored_polygon(band, color)
+
 
 func panel() -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
@@ -87,6 +130,26 @@ func _ready() -> void:
 	theme.default_font_size = 18
 	root.theme = theme
 	add_child(root)
+	revelation_mist = ColorRect.new()
+	root.add_child(revelation_mist)
+	revelation_mist.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	revelation_mist.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_revelation_material = ShaderMaterial.new()
+	_revelation_material.shader = preload("res://shaders/sanity_revelation_mist.gdshader")
+	revelation_mist.material = _revelation_material
+	revelation_mist.self_modulate.a = 0.0
+	revelation_mist.hide()
+	frenzy_border = Panel.new()
+	root.add_child(frenzy_border)
+	frenzy_border.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frenzy_border.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var frenzy_style := StyleBoxFlat.new()
+	frenzy_style.draw_center = false
+	frenzy_style.border_color = Color(1.0, .20, .22, .84)
+	frenzy_style.set_border_width_all(6)
+	frenzy_border.add_theme_stylebox_override("panel", frenzy_style)
+	frenzy_border.hide()
+
 	mace_status_panel=PanelContainer.new();root.add_child(mace_status_panel)
 	mace_status_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	mace_status_panel.offset_left=-300;mace_status_panel.offset_right=300;mace_status_panel.offset_top=122;mace_status_panel.offset_bottom=190
@@ -147,11 +210,65 @@ func _ready() -> void:
 	map_legend.add_child(label("■ ยังไม่เข้า", 12, Color("#8094a1")))
 	vital_panel=PanelContainer.new();root.add_child(vital_panel)
 	vital_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	vital_panel.offset_left=20;vital_panel.offset_right=256;vital_panel.offset_top=16;vital_panel.offset_bottom=112
-	vital_panel.mouse_filter=Control.MOUSE_FILTER_IGNORE;vital_panel.add_theme_stylebox_override("panel",compact_panel())
-	var vital:=VBoxContainer.new();vital.add_theme_constant_override("separation",3);vital_panel.add_child(vital)
-	health_text=label("เลือด 100 / 100",16,PAPER);vital.add_child(health_text)
-	health_bar=bar(Color("#de6c7b"));health_bar.custom_minimum_size=Vector2(0,16);vital.add_child(health_bar)
+	vital_panel.offset_left = 39
+	vital_panel.offset_right = 265
+	vital_panel.offset_top = 8
+	vital_panel.offset_bottom = 70
+	vital_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var vital_frame := instrument_frame()
+	vital_frame.content_margin_left = 0
+	vital_panel.add_theme_stylebox_override("panel", vital_frame)
+	var vital := VBoxContainer.new()
+	vital.alignment = BoxContainer.ALIGNMENT_CENTER
+	vital.add_theme_constant_override("separation", 5)
+	vital_panel.add_child(vital)
+	sanity_panel = PanelContainer.new()
+	root.add_child(sanity_panel)
+	sanity_panel.position = Vector2(8, 8)
+	sanity_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sanity_frame = instrument_frame()
+	sanity_frame.set_corner_radius_all(31)
+	sanity_panel.add_theme_stylebox_override("panel", sanity_frame)
+	var dial_art := Control.new()
+	dial_art.custom_minimum_size = Vector2(48, 48)
+	dial_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sanity_panel.add_child(dial_art)
+	sanity_wash = ShaderMaterial.new()
+	sanity_wash.shader = preload("res://shaders/sanity_dial_wash.gdshader")
+	var wash := ColorRect.new()
+	wash.position = Vector2(-5, -5)
+	wash.size = Vector2(58, 58)
+	wash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wash.material = sanity_wash
+	dial_art.add_child(wash)
+	sanity_gear_large = dial_gear(dial_art, Rect2(2, 3, 28, 28), Vector2(16, 17))
+	sanity_gear_small = dial_gear(dial_art, Rect2(213, 20, 24, 24), Vector2(33, 32))
+	sanity_progress = TextureProgressBar.new()
+	sanity_progress.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sanity_progress.position = Vector2(0, 5)
+	sanity_progress.pivot_offset = Vector2(24, 18)
+	sanity_progress.fill_mode = TextureProgressBar.FILL_BOTTOM_TO_TOP
+	var brain := layout_texture(Rect2(144, 5, 48, 38))
+	sanity_progress.texture_under = brain
+	sanity_progress.texture_progress = brain
+	sanity_progress.tint_progress = Color("#c4a0df")
+	dial_art.add_child(sanity_progress)
+	sanity_overflow = TextureProgressBar.new()
+	sanity_overflow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sanity_overflow.fill_mode = TextureProgressBar.FILL_BOTTOM_TO_TOP
+	sanity_overflow.texture_progress = brain
+	sanity_overflow.tint_progress = Color("#ff985e")
+	sanity_progress.add_child(sanity_overflow)
+	sanity_warning = Control.new()
+	sanity_warning.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dial_art.add_child(sanity_warning)
+	sanity_warning.draw.connect(_draw_sanity_warning)
+	sanity_warning.hide()
+	sanity_panel.hide()
+	health_bar = dial_bar(Color("#de6c7b"), 15)
+	vital.add_child(health_bar)
+	mana_bar = dial_bar(Color("#5299d7"), 11)
+	vital.add_child(mana_bar)
 	stamina_bar = bar(Color("#65c3b7"))
 	stamina_bar.custom_minimum_size = Vector2(8, 38)
 	stamina_bar.fill_mode = ProgressBar.FILL_BOTTOM_TO_TOP
@@ -184,12 +301,7 @@ func _ready() -> void:
 		bow_meter.add_child(segment)
 	bow_meter.hide()
 	root.add_child(bow_meter)
-	flask_button=button("F  ยา 3/3",func():game.use_health_flask());flask_button.custom_minimum_size=Vector2(0,28);flask_button.add_theme_font_size_override("font_size",14);vital.add_child(flask_button)
-	flask_button.tooltip_text="ฟื้นเลือด 25 ทันที + 5/วินาที นาน 5 วินาที\nไม่รักษาชิ้นส่วน • T เริ่มใหม่รับ 3 ขวด"
-	for state in ["normal","hover","pressed","disabled"]:
-		var style:=compact_panel();style.content_margin_top=4;style.content_margin_bottom=4
-		if state=="hover":style.bg_color=Color("#324a50");style.border_color=GOLD
-		flask_button.add_theme_stylebox_override(state,style)
+	_build_flask_tray(root)
 	help_panel=PanelContainer.new();root.add_child(help_panel)
 	help_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	help_panel.offset_left=340;help_panel.offset_right=-20;help_panel.offset_top=-134;help_panel.offset_bottom=-20
@@ -292,6 +404,9 @@ func _build_companion_panel(root: Control) -> void:
 func _process(delta: float) -> void:
 	if not is_instance_valid(stamina_bar):
 		return
+	if sanity_panel.visible: _animate_sanity_dial(delta)
+	if revelation_mist.visible and _revelation_elapsed < 1.35:
+		_animate_revelation_mist(delta)
 	var revive_target = game.revive_target
 	revive_bar.visible = is_instance_valid(revive_target) and game.mode == "combat"
 	if revive_bar.visible:
@@ -330,6 +445,146 @@ func _process(delta: float) -> void:
 		stamina_bar.position = (camera.unproject_position(point) - stamina_bar.size * .5).round()
 
 
+func _animate_revelation_mist(delta: float) -> void:
+	_revelation_elapsed = minf(_revelation_elapsed + delta, 1.35)
+	var arrival := smoothstep(0.0, .35, _revelation_elapsed)
+	var retreat := smoothstep(.35, 1.35, _revelation_elapsed)
+	revelation_mist.self_modulate.a = arrival * lerpf(1.0, .34, retreat)
+	_revelation_material.set_shader_parameter("perception", retreat)
+
+
+func _animate_sanity_dial(delta: float) -> void:
+	var sanity_ratio: float = float(game.sanity) / game.frenzy_threshold()
+	var pressure := smoothstep(.45, 1.0, sanity_ratio)
+	var beats_per_second := lerpf(.50, 2.80, pressure)
+	_sanity_pulse_phase = fposmod(_sanity_pulse_phase + delta * beats_per_second, 1.0)
+	var pulse := exp(-pow((_sanity_pulse_phase - .10) / .08, 2)) * lerpf(.066, .105, pressure)
+	sanity_progress.scale = Vector2.ONE * (1.0 + pulse)
+	var gear_speed := lerpf(.53, 2.40, pressure)
+	sanity_gear_large.rotation += delta * gear_speed
+	# Twelve teeth drive eight, with opposite rotation at their contact.
+	sanity_gear_small.rotation -= delta * gear_speed * 1.5
+	if sanity_warning.visible:
+		sanity_warning.queue_redraw()
+
+
+func _draw_sanity_warning() -> void:
+	var expansion := .5 - .5 * cos(_sanity_pulse_phase * TAU)
+	var radius := lerpf(19.5, 24.0, expansion)
+	var flash := pow(.5 + .5 * cos((_sanity_pulse_phase - .24) * TAU), 5.0)
+	sanity_warning.draw_set_transform(Vector2(24, 21), 0.0, Vector2(1.0, .76))
+	# Layer wider, dimmer strokes so the brief flash fades softly at its edges.
+	sanity_warning.draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, Color(1.0, .10, .16, .14 * flash), 10.0, true)
+	sanity_warning.draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, Color(1.0, .17, .19, .26 * flash), 6.0, true)
+	sanity_warning.draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, Color(1.0, .24, .24, .10 + .34 * flash), 3.0, true)
+	sanity_warning.draw_arc(Vector2.ZERO, radius, 0.0, TAU, 48, Color(1.0, .31 + .22 * flash, .34, .35 + .60 * flash), 1.15, true)
+	sanity_warning.draw_set_transform(Vector2.ZERO)
+
+	const NERVES := [
+		[Vector2(18, 6), Vector2(15, 3), Vector2(17, 0)],
+		[Vector2(6, 15), Vector2(2, 17), Vector2(0, 14), Vector2(-3, 16)],
+		[Vector2(8, 31), Vector2(4, 33), Vector2(5, 37), Vector2(3, 39)],
+		[Vector2(19, 36), Vector2(17, 40), Vector2(20, 44), Vector2(18, 46)],
+		[Vector2(36, 34), Vector2(40, 36), Vector2(39, 39), Vector2(43, 41)],
+		[Vector2(43, 21), Vector2(46, 19), Vector2(48, 22), Vector2(50, 21)],
+		[Vector2(39, 11), Vector2(41, 7), Vector2(39, 4)],
+	]
+	for i in range(NERVES.size()):
+		var intensity := .65 + .25 * sin(_sanity_pulse_phase * TAU - i * .85)
+		sanity_warning.draw_polyline(PackedVector2Array(NERVES[i]), Color(1.0, .26, .28, intensity), 1.25, true)
+
+
+func dial_gear(parent: Control, region: Rect2, center: Vector2) -> TextureRect:
+	var gear := TextureRect.new()
+	gear.texture = layout_texture(region)
+	gear.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	gear.pivot_offset = region.size * .5
+	gear.position = center - gear.pivot_offset
+	parent.add_child(gear)
+	return gear
+
+
+func instrument_frame() -> StyleBoxFlat:
+	var style := compact_panel()
+	style.bg_color = Color("#22221f")
+	style.border_color = Color("#89734f")
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(7)
+	return style
+
+
+func dial_bar(color: Color, height: int) -> DialBar:
+	var meter := DialBar.new()
+	meter.dial = sanity_panel
+	meter.tint = color
+	meter.show_percentage = false
+	meter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	meter.custom_minimum_size = Vector2(0, height)
+	meter.add_theme_stylebox_override("background", StyleBoxEmpty.new())
+	meter.add_theme_stylebox_override("fill", StyleBoxEmpty.new())
+	return meter
+
+
+func layout_texture(region: Rect2) -> AtlasTexture:
+	var frame := AtlasTexture.new()
+	frame.atlas = LAYOUT_ICONS
+	frame.region = region
+	frame.filter_clip = true
+	return frame
+
+
+func layout_icon(index: int, extent: int) -> TextureRect:
+	var icon := TextureRect.new()
+	icon.texture = layout_texture(Rect2(index * 48, 0, 48, 48))
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.custom_minimum_size = Vector2(extent, extent)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return icon
+
+
+func _build_flask_tray(root: Control) -> void:
+	flask_tray = HBoxContainer.new()
+	root.add_child(flask_tray)
+	flask_tray.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	flask_tray.offset_left = 104
+	flask_tray.offset_right = 230
+	flask_tray.offset_top = -76
+	flask_tray.offset_bottom = -8
+	flask_tray.add_theme_constant_override("separation", 6)
+	flask_tray.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	flask_button = Button.new()
+	flask_button.focus_mode = Control.FOCUS_NONE
+	flask_button.custom_minimum_size = Vector2(60, 68)
+	flask_button.pressed.connect(func(): game.use_health_flask())
+	flask_tray.add_child(flask_button)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var style := instrument_frame()
+		if state == "hover": style.border_color = GOLD
+		flask_button.add_theme_stylebox_override(state, style)
+	var red_content := VBoxContainer.new()
+	flask_button.add_child(red_content)
+	red_content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	red_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	red_content.alignment = BoxContainer.ALIGNMENT_CENTER
+	red_content.add_theme_constant_override("separation", 0)
+	red_content.add_child(layout_icon(1, 36))
+	flask_count = label("", 12)
+	flask_count.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	red_content.add_child(flask_count)
+
+	var mana_slot := PanelContainer.new()
+	mana_slot.custom_minimum_size = Vector2(60, 68)
+	mana_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mana_slot.add_theme_stylebox_override("panel", instrument_frame())
+	flask_tray.add_child(mana_slot)
+	var blue := layout_icon(2, 36)
+	blue.modulate.a = .5
+	mana_slot.add_child(blue)
+
+
 func bar(color: Color) -> ProgressBar:
 	var b := ProgressBar.new()
 	b.show_percentage = false
@@ -344,6 +599,11 @@ func bar(color: Color) -> ProgressBar:
 	return b
 
 func show_mode(mode: String) -> void:
+	if mode not in ["practice", "combat"]:
+		revelation_mist.hide()
+		frenzy_border.hide()
+		sanity_panel.hide()
+		flask_tray.hide()
 	overlay.visible = mode in ["menu", "paused", "victory", "dead","shore_end"]
 	for child in buttons.get_children():
 		buttons.remove_child(child)
@@ -451,9 +711,12 @@ func refresh() -> void:
 	if game.encounter_mode=="captain":objective.text="ท่าเรือร้าง • นายท้าย\nH ดูฮิตบ็อกซ์ • ตัดแขนโซ่ด้วยอาวุธมีคม"
 	health_bar.max_value=game.max_health()
 	health_bar.value = game.health
-	flask_button.text="F  ยา %d/3%s"%[game.flasks.charges,"  •  +%.0f/วิ"%game.flasks.rate() if game.flasks.rate()>0 else ""]
-	flask_button.disabled=game.mode not in ["practice","combat"] or game.inventory_open or game.stats_open or not game.body_action_ready() or game.flasks.charges<=0 or game.health>=game.max_health()
-	health_text.text="เลือด %d / %d"%[ceili(game.health),int(game.max_health())]
+	flask_count.text = "F  %d/3" % game.flasks.charges
+	flask_button.tooltip_text = "ฟื้นเลือด 25 ทันที + 5/วินาที นาน 5 วินาที"
+	if game.flasks.rate() > 0:
+		flask_button.tooltip_text += "\nกำลังฟื้น +%.0f/วิ" % game.flasks.rate()
+	flask_button.disabled=game.frenzy or game.mode not in ["practice","combat"] or game.inventory_open or game.stats_open or not game.body_action_ready() or game.flasks.charges<=0 or game.health>=game.max_health()
+	flask_count.modulate.a = .58 if flask_button.disabled else 1.0
 	if game.mode == "practice":
 		objective.text = "ลานซ้อม • ลูกไฟช้าแต่แรง ระเบิดใส่ตัวใกล้เคียง" if game.weapon_family == "staff" else "ลานซ้อม • เดินเข้าระยะ แล้วลองโจมตีต่อเนื่อง"
 		if pistol: objective.text = "ลานซ้อม • ยิงทีละนัด โดนตัวแรกแล้วหาย • R รีโหลด"
@@ -485,6 +748,7 @@ func refresh() -> void:
 	if companion_panel.visible:
 		for index in game.companions.size():
 			var companion = game.companions[index]
+			companion_bars[index].max_value = companion.max_health()
 			companion_bars[index].value = companion.health
 			var state: String = game.expedition_companions[index].get("role", "")
 			if companion.downed: state = "ล้มอยู่ · กด E ค้างเพื่อชุบ"
@@ -593,7 +857,34 @@ func _arrange_status_and_hints(weapon_details: String) -> void:
 	status_view.refresh(game)
 	status_panel.visible=not status_view.shown_effects.is_empty() and game.mode in ["practice","combat"] and not game.inventory_open and not game.stats_open
 	status_panel.reset_size()
-	if game.health<=0 and game.mode in ["practice","combat"]:ready_text.text="วิกฤต • เลือด 0 • ระวังทุกท่าสีแดง"
+	var active: bool = game.mode in ["practice", "combat"]
+	var show_resources: bool = active and game.encounter_mode not in ["wreck_shore", "village_study", "coast_forms"]
+	var revealed: bool = game.has_sanity_revelation()
+	revelation_mist.visible = show_resources and revealed
+	if not revealed and _revelation_elapsed > 0.0:
+		_revelation_elapsed = 0.0
+		revelation_mist.self_modulate.a = 0.0
+		_revelation_material.set_shader_parameter("perception", 0.0)
+	sanity_panel.visible = show_resources
+	flask_tray.visible = show_resources
+	mana_bar.max_value = game.stats.value("max_mana")
+	mana_bar.value = game.mana
+	var previous_violet := sanity_progress.ratio
+	var previous_amber := sanity_overflow.ratio
+	sanity_progress.max_value = game.SANITY_REVELATION
+	sanity_progress.value = game.sanity
+	sanity_overflow.max_value = game.frenzy_threshold() - game.SANITY_REVELATION
+	sanity_overflow.value = game.sanity - game.SANITY_REVELATION
+	if sanity_progress.ratio != previous_violet:
+		sanity_wash.set_shader_parameter("violet_fill", sanity_progress.ratio)
+	if sanity_overflow.ratio != previous_amber:
+		sanity_wash.set_shader_parameter("amber_fill", sanity_overflow.ratio)
+	sanity_warning.visible = game.sanity >= game.frenzy_threshold()
+	frenzy_border.visible = active and game.frenzy
+	if frenzy_border.visible:
+		ready_text.text = "คลั่ง • ระวังท่าแดง • ใช้ยาฟื้นเลือดไม่ได้"
+	elif active and game.health <= 0.0:
+		ready_text.text = "วิกฤต • เลือด 0 • โดนชิ้นส่วนเพิ่มสติ"
 	weapon_hint.tooltip_text=weapon_details
 	weapon_hint.text="R รีโหลด • Q ชุด • I ของ • P สถานะ • H ตรวจ • T ใหม่ • M เสียง • ESC พัก"
 	if game.primary_family() == "crossbow":weapon_hint.text = "ยิงโดนสร้างแผลลึก • ขึ้นลำขณะเดินช้าได้ • I ของ"

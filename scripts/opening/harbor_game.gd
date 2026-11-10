@@ -3,9 +3,11 @@ const SharedSeats=preload("res://modular/scripts/shared_seats.gd")
 const CityPose=preload("res://modular/scripts/city_npc_pose.gd")
 const World=preload("res://scripts/opening/harbor_world.gd")
 const Gangway=preload("res://scripts/opening/harbor_gangway.gd")
-const COASTAL_COMBAT=preload("res://scenes/opening/coastal_combat_entry.tscn")
+const Voyage=preload("res://scripts/opening/expedition_voyage.gd")
 const BoardingParty=preload("res://scripts/opening/boarding_party.gd")
 var boarding_party
+var departing:=false
+var _roster_attribute_seed := randi()
 var boarding_latched:=false
 var boarding_previous_fov:=42.0
 var boarding_return: Tween
@@ -40,7 +42,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:tick(delta)
 func tick(delta: float) -> void:
  if is_instance_valid(boarding_party):
-  camera.tick(delta)
+  if not departing:camera.tick(delta)
   world.tick(delta,camera)
   boarding_party.sync_deck(world,camera)
   return
@@ -89,7 +91,9 @@ func _open_boarding_party() -> void:
  if boarding_return and boarding_return.is_running():boarding_return.kill()
  boarding_previous_fov=camera.fov
  camera.set_view(&"boarding",.95)
+ world.set_boarding_crew_only(true)
  boarding_party=BoardingParty.new()
+ boarding_party.attribute_seed=_roster_attribute_seed
  add_child(boarding_party)
  boarding_party.sync_deck(world,camera)
  boarding_party.confirmed.connect(_depart_with_party)
@@ -98,6 +102,7 @@ func _open_boarding_party() -> void:
 func _close_boarding_party() -> void:
  boarding_party.queue_free()
  boarding_party=null
+ world.set_boarding_crew_only(false)
  walker.show()
  walker.enabled=true
  boarding_return=create_tween()
@@ -105,10 +110,21 @@ func _close_boarding_party() -> void:
  ui.show_caption("WASD · เดิน    |    E · นั่ง/ลุกใกล้ที่นั่ง    |    F · จิบกาแฟ")
 
 func _depart_with_party(party: Array[Dictionary]) -> void:
- var entry=COASTAL_COMBAT.instantiate()
- entry.party=party
- if get_tree().change_scene_to_node(entry)!=OK:
-  entry.free()
+ if departing:return
+ departing=true
+ ui.cinematic(true)
+ ui.show_caption("")
+ boarding_party.set_departing(true)
+ var voyage=Voyage.new()
+ get_tree().root.add_child(voyage)
+ voyage.run(self,party)
+
+func cancel_departure() -> void:
+ departing=false
+ world.departure_offset=Vector3.ZERO
+ world.departure_heading=0.0
+ camera.set_view(&"boarding",.65)
+ boarding_party.set_departing(false)
 
 func _has_crossed_departure_landing() -> bool:
  var at: Vector3=walker.position

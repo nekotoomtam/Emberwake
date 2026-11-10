@@ -3,6 +3,7 @@ extends Node3D
 const Hazards = preload("res://scripts/dungeon_hazards.gd")
 const Grove = preload("res://scripts/dungeon_mushroom_grove.gd")
 const Forest = preload("res://scripts/dungeon_forest.gd")
+const RevelationGrowth = preload("res://scripts/dungeon_revelation_growth.gd")
 const HALF := Vector2(21.0, 15.7)
 const START_HALF := Vector2(24.0, 18.0)
 var room_half := HALF
@@ -17,6 +18,7 @@ var peek_exits: Dictionary = {}
 var sight_boxes: Dictionary = {}
 var trap: Node3D
 var hazards: Hazards
+var revelation_growth: RevelationGrowth
 var visual_only := false
 var layout: Node3D
 var gates: Node3D
@@ -45,6 +47,7 @@ func add_room_lighting() -> void:
 func build_room(links: Dictionary, variant: int, cleared: bool, is_start: bool = false, dark_exits: Array[Vector2i] = [], joined_entry: Vector2i = Vector2i.ZERO, feature: String = "", feature_origin := Vector3.ZERO, feature_seed: int = 0, floor_seed: int = 0) -> void:
 	trap = null
 	hazards = null
+	revelation_growth = null
 	room_half = START_HALF if is_start else HALF
 	if is_instance_valid(layout):
 		remove_child(layout)
@@ -57,6 +60,7 @@ func build_room(links: Dictionary, variant: int, cleared: bool, is_start: bool =
 	var lock := material("#60483c")
 	var shape := 0 if is_start else variant
 	var forest := Forest.new()
+	forest.collect_revelation_sites = true
 	layout.add_child(forest)
 	walkable_outline = Forest.outline_for(room_half, DOOR_WIDTH, shape)
 	box(layout, Vector3(0,-.22,0), Vector3(room_half.x * 2.0 + 10, .44, room_half.y * 2.0 + 10), mats.understory)
@@ -78,6 +82,7 @@ func build_room(links: Dictionary, variant: int, cleared: bool, is_start: bool =
 		Grove.build(layout, walkable_outline, grove.groups, poison_groups, links, room_half, grove_seed)
 	elif not is_start:
 		_add_forest_cover(forest, shape)
+	forest.collect_revelation_sites = false
 	for direction: Vector2i in DIRECTIONS:
 		var axis := Vector3(direction.x, 0, direction.y)
 		var across := Vector3(axis.z, 0, -axis.x)
@@ -107,11 +112,20 @@ func build_room(links: Dictionary, variant: int, cleared: bool, is_start: bool =
 		if not cleared:
 			box(gates, edge+Vector3.UP*.48, oriented(direction,DOOR_WIDTH,.96,.24), lock)
 	forest.finish()
+	revelation_growth = RevelationGrowth.new()
+	revelation_growth.name = "RevelationGrowth"
+	layout.add_child(revelation_growth)
+	revelation_growth.setup(forest.revelation_sites, forest.revelation_borders, hash([floor_seed, "revelation_growth"]))
 	if not feature.is_empty():
 		hazards = Hazards.new()
 		hazards.position = feature_origin
 		layout.add_child(hazards)
 		hazards.configure(feature, walkable_outline, feature_seed, poison_groups)
+
+
+func present_revelation(revealed: bool, observer: Vector3) -> void:
+	if revelation_growth != null:
+		revelation_growth.present(revealed, observer)
 
 
 func show_trap(data: Dictionary) -> void:
@@ -172,6 +186,8 @@ func _add_forest_borders(forest: Node3D, links: Dictionary) -> void:
 		if links.has(door): continue
 		var a := Vector3(first.x, 0, first.y)
 		var b := Vector3(last.x, 0, last.y)
+		forest.revelation_borders.append(a)
+		forest.revelation_borders.append(b)
 		_add_forest_barrier(a, b, .82, 1.7)
 		forest.thicket(a, b, 5500 + index * 17)
 

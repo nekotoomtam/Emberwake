@@ -85,7 +85,6 @@ func _advance(delta: float,game) -> void:
  clock+=delta;_hurt_time=maxf(0,_hurt_time-delta);_parry_flash=maxf(0,_parry_flash-delta)
  if dead:death_time+=delta;return
  cooldown=maxf(0,cooldown-delta);stagger=maxf(0,stagger-delta)
- if not attack_data.is_empty():attack_data.parryable=attack_data.base_parryable and game.health>0
  var combat_target: Vector3=game.enemy_target_for(self).global_position
  var offset: Vector3=combat_target-global_position;offset.y=0
  var distance:=offset.length()
@@ -124,7 +123,7 @@ func _advance(delta: float,game) -> void:
      var within_trigger := distance <= float(next.trigger)
      var aligned := within_trigger and _can_begin_attack(direction,next,game)
      if aligned and cooldown<=0 and line_of_sight(combat_target):
-      attack_data=next.duplicate();attack_data.parryable=attack_data.base_parryable and game.health>0;attack_index+=1;state="windup";telegraph_left=attack_data.windup;attack_hit=false;elapsed=0;lunge_travel=0;attack_angle=_locked_attack_angle(direction,game);target_point=combat_target
+      attack_data=next.duplicate();attack_data.parryable=game.enemy_attack_parryable(attack_data.base_parryable, global_position);attack_index+=1;state="windup";telegraph_left=attack_data.windup;attack_hit=false;elapsed=0;lunge_travel=0;attack_angle=_locked_attack_angle(direction,game);target_point=combat_target
      else:
       var move:=direction*float(_stats.speed) if distance>float(next.trigger)*.88 or not aligned else Vector3.ZERO
       if int(next.projectiles)>0 and distance<2.8:move=-direction*float(_stats.speed)

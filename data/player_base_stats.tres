@@ -4,4 +4,4 @@
 
 [resource]
 script = ExtResource("1")
-base = {"sight_range": 10.0, "sense_radius": 5.0, "max_health": 100.0, "health_regen": 0.0, "max_stamina": 100.0, "stamina_regen": 26.0, "stamina_delay": 0.35, "armor": 0.0, "resist_fire": 0.0, "resist_ice": 0.0, "resist_lightning": 0.0, "critical_chance": 0.05, "critical_multiplier": 1.5, "attack_speed": 1.0, "move_speed": 1.0, "reload_speed": 1.0, "damage_multiplier": 1.0, "stamina_cost_multiplier": 1.0}
+base = {"sight_range": 10.0, "sense_radius": 5.0, "max_health": 100.0, "health_regen": 0.0, "max_stamina": 100.0, "max_mana": 100.0, "stamina_regen": 26.0, "stamina_delay": 0.35, "armor": 0.0, "resist_fire": 0.0, "resist_ice": 0.0, "resist_lightning": 0.0, "critical_chance": 0.05, "critical_multiplier": 1.5, "attack_speed": 1.0, "move_speed": 1.0, "reload_speed": 1.0, "damage_multiplier": 1.0, "stamina_cost_multiplier": 1.0}

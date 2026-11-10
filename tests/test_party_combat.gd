@@ -87,7 +87,7 @@ func run() -> void:
 	var waits_full_duration: bool = guard.downed and game.revive_elapsed > 1.48
 	game.tick(1.0 / 120.0)
 	press_revive(false)
-	var revived: bool = waits_full_duration and is_equal_approx(guard.health, 30.0) and not guard.downed
+	var revived: bool = waits_full_duration and is_equal_approx(guard.health, guard.max_health() * .30) and not guard.downed
 	game.player.position = start
 	game.clear_actors()
 	game.dungeon.rooms[game.dungeon.current].cleared = true

@@ -8,8 +8,7 @@ const StaminaRules = preload("res://scripts/stamina_rules.gd")
 const BaseStats = preload("res://data/player_base_stats.tres")
 const Attacks = preload("res://scripts/enemy_attacks.gd")
 const Anatomy = preload("res://scripts/anatomy_state.gd")
-const MAX_HEALTH := 100.0
-const LOW_HEALTH := MAX_HEALTH * .25
+const LOW_HEALTH_FRACTION := .25
 const RETREAT_DURATION := 4.0
 const FOLLOW_RADIUS := 10.0
 const REVIVE_RANGE := 1.6
@@ -20,7 +19,8 @@ const DASH_SCAN_INTERVAL := .06
 
 var avatar: Hero
 var motion = Motion.new()
-var health := MAX_HEALTH
+var stats = BaseStats.duplicate(true)
+var health := BaseStats.value("max_health")
 var downed := false
 var revive_marker: Label3D
 var target: Node3D
@@ -40,6 +40,7 @@ var dash_recharge := 0.0
 var dash_scan_left := 0.0
 var dash_direction := Vector3.ZERO
 var stamina := BaseStats.value("max_stamina")
+var mana := BaseStats.value("max_mana")
 var energy := StaminaRules.new()
 
 func _ready() -> void:
@@ -69,6 +70,11 @@ func _ready() -> void:
 
 func configure(recruit: Dictionary, index: int) -> void:
 	slot = index
+	stats.attributes = recruit.get("attributes", {}).duplicate()
+	health = max_health()
+	stamina = stats.value("max_stamina")
+	mana = stats.value("max_mana")
+	avatar.anatomy.bind_max_hp(health)
 	family = recruit.get("weapon", "sword")
 	ranged = family in ["pistol", "rifle", "staff", "bow", "crossbow"]
 	avatar.set_weapon_family(family)
@@ -98,9 +104,13 @@ func recall() -> void:
 	motion.reset()
 	attack_target = null
 
+func max_health() -> float:
+	return stats.value("max_health")
+
 func receive_hit(amount: float) -> void:
 	if downed or hurt_left > 0.0 or dash_left > Dash.DURATION - Rewards.DODGE_IFRAMES or amount <= 0.0: return
-	var was_above_low_health := health > LOW_HEALTH
+	var low_health := max_health() * LOW_HEALTH_FRACTION
+	var was_above_low_health := health > low_health
 	health = maxf(0.0, health - amount)
 	hurt_left = .38
 	if health <= 0.0:
@@ -108,7 +118,7 @@ func receive_hit(amount: float) -> void:
 		dash_left = 0.0
 		velocity = Vector3.ZERO
 		motion.reset()
-	elif was_above_low_health and health <= LOW_HEALTH:
+	elif was_above_low_health and health <= low_health:
 		recall()
 
 func receive_forest_poison(amount: float, integrity_loss: float) -> void:
@@ -123,7 +133,7 @@ func can_revive_from(origin: Vector3) -> bool:
 func revive() -> void:
 	if not downed: return
 	downed = false
-	health = MAX_HEALTH * REVIVE_FRACTION
+	health = max_health() * REVIVE_FRACTION
 	hurt_left = .75
 	retreat_left = .75
 	cooldown = .35
@@ -136,7 +146,7 @@ func tick(delta: float, game) -> void:
 	retreat_left = maxf(0.0, retreat_left - delta)
 	cooldown = maxf(0.0, cooldown - delta)
 	dash_recharge = maxf(0.0, dash_recharge - delta)
-	stamina = energy.recover(stamina, delta, BaseStats, dash_left > 0.0, false)
+	stamina = energy.recover(stamina, delta, stats, dash_left > 0.0, false)
 	if dash_left <= 0.0 and dash_recharge <= 0.0 and stamina >= Rewards.DODGE_COST:
 		dash_scan_left -= delta
 		if dash_scan_left <= 0.0:

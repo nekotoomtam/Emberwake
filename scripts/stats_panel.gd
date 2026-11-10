@@ -3,6 +3,7 @@ var game
 var surface: Control
 var left: Label
 var right: Label
+var attributes_text: Label
 func _ready() -> void:
  layer=30
  surface=Control.new();surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT);add_child(surface)
@@ -12,6 +13,7 @@ func _ready() -> void:
  var theme:=Theme.new();var font:=SystemFont.new();font.font_names=PackedStringArray(["Tahoma","Noto Sans Thai"]);theme.default_font=font;panel.theme=theme
  var column:=VBoxContainer.new();column.add_theme_constant_override("separation",16);panel.add_child(column)
  column.add_child(game.ui.label("สถานะตัวละคร • ค่าพื้นฐาน → ค่าที่ใช้จริง",25,game.ui.GOLD))
+ attributes_text=game.ui.label("",18,game.ui.GOLD);column.add_child(attributes_text)
  var row:=HBoxContainer.new();row.add_theme_constant_override("separation",45);column.add_child(row)
  left=game.ui.label("",18);left.custom_minimum_size.x=430;row.add_child(left)
  right=game.ui.label("",18);row.add_child(right)
@@ -23,5 +25,12 @@ func _ready() -> void:
 func entry(title: String,key: String,mult: float=1,suffix: String="") -> String:
  return "%s   %s%s → %s%s\n"%[title,str(float(game.stats.base[key])*mult),suffix,str((game.max_health() if key=="max_health" else game.stats.value(key))*mult),suffix]
 func refresh() -> void:
- left.text=entry("ชีวิตสูงสุด","max_health")+entry("ฟื้นชีวิต / วิ","health_regen")+entry("สแตมิน่าสูงสุด","max_stamina")+entry("ฟื้นสแตมิน่า / วิ","stamina_regen")+entry("รอฟื้นพลัง","stamina_delay",1," วิ")+entry("เกราะกายภาพ","armor")+entry("โอกาสคริติคอล","critical_chance",100,"%")+entry("ความแรงคริติคอล","critical_multiplier",100,"%")
+ attributes_text.visible = not game.stats.attributes.is_empty()
+ if attributes_text.visible:
+  var lines := PackedStringArray(["ตัวหลัก  •  " + game.CharacterStats.level_one_text(game.stats.attributes)])
+  for index in game.companions.size():
+   var recruit: Dictionary = game.expedition_companions[index]
+   lines.append(str(recruit.get("name", "Sub %d" % (index + 1))) + "  •  " + game.CharacterStats.level_one_text(game.companions[index].stats.attributes))
+  attributes_text.text = "\n".join(lines)
+ left.text=entry("ชีวิตสูงสุด","max_health")+entry("ฟื้นชีวิต / วิ","health_regen")+entry("สแตมิน่าสูงสุด","max_stamina")+entry("พลังเวทสูงสุด","max_mana")+entry("ฟื้นสแตมิน่า / วิ","stamina_regen")+entry("รอฟื้นพลัง","stamina_delay",1," วิ")+entry("เกราะกายภาพ","armor")+entry("โอกาสคริติคอล","critical_chance",100,"%")+entry("ความแรงคริติคอล","critical_multiplier",100,"%")
  right.text=entry("ต้านทานไฟ","resist_fire",100,"%")+entry("ต้านทานน้ำแข็ง","resist_ice",100,"%")+entry("ต้านทานสายฟ้า","resist_lightning",100,"%")+entry("ความเร็วโจมตี","attack_speed",100,"%")+entry("ความเร็วเคลื่อนที่","move_speed",100,"%")+entry("ความเร็วรีโหลด","reload_speed",100,"%")+entry("ระยะสายตา","sight_range")+entry("ระยะรับรู้","sense_radius")+"\nกันด้านหน้า: ลดดาเมจ 30% / ฟรี\nต้านทานธาตุสูงสุด 75%"

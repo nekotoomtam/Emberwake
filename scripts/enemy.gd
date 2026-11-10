@@ -159,7 +159,6 @@ func advance_armor_status(delta: float) -> void:
 func tick(delta: float, game, advance_status: bool = true) -> void:
 	if not is_finite(delta) or delta <= 0: return
 	if advance_status: advance_armor_status(delta)
-	if not attack_data.is_empty():attack_data.parryable=bool(attack_data.get("base_parryable",attack_data.parryable)) and game.health>0
 	clock += delta
 	_parry_flash=maxf(0,_parry_flash-delta)
 	sprite.global_basis = game.camera.global_basis
@@ -200,7 +199,7 @@ func tick(delta: float, game, advance_status: bool = true) -> void:
 			if cooldown<=0:state="chase";attack_data={}
 		elif distance<=range_to_attack and cooldown<=0:
 			attack_data=Attacks.definition(kind,attack_index,health<max_health*.5);attack_index+=1
-			if game.health<=0:attack_data.parryable=false
+			attack_data.parryable = game.enemy_attack_parryable(attack_data.parryable, global_position)
 			state="windup";target_point=game.player.position
 			attack_angle=atan2(direction.z,direction.x);telegraph_left=attack_data.windup;attack_hit=false
 		else:

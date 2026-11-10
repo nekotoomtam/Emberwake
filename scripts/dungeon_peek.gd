@@ -40,7 +40,7 @@ func _ready() -> void:
 	shade.material = sight_material
 	hide()
 
-func open(room: Dictionary, travel: Vector2i, map_basis: Basis, reach: float, create_enemy: Callable) -> void:
+func open(room: Dictionary, travel: Vector2i, map_basis: Basis, reach: float, create_enemy: Callable, revealed: bool = false) -> void:
 	close()
 	_door_axis = Vector3(travel.x, 0, travel.y)
 	forward = _door_axis
@@ -53,6 +53,7 @@ func open(room: Dictionary, travel: Vector2i, map_basis: Basis, reach: float, cr
 	preview_room.build_room(room.links, room.variant, room.cleared, false, [], -travel, room.feature, room.feature_origin, room.feature_seed, room.floor_seed)
 	var half := Room.HALF.x if travel.x != 0 else Room.HALF.y
 	_eyes = -_door_axis * (half - .45) + Vector3.UP * .03
+	preview_room.present_revelation(revealed, _eyes)
 
 	scene_camera = Camera3D.new()
 	scene_camera.projection = Camera3D.PROJECTION_ORTHOGONAL

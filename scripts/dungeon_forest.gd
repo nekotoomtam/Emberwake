@@ -9,6 +9,15 @@ const OUTER_ARC := [Vector2(.31,.96), Vector2(.55,.93), Vector2(.83,.86), Vector
 const ARCHES := [Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1), Vector2(-1, -1)]
 
 static var _surfaces: Dictionary = {}
+var collect_revelation_sites := false
+var revelation_sites: Array[Dictionary] = []
+var revelation_borders := PackedVector3Array()
+
+
+func tree(at: Vector3, height: float, seed_: int, bark: Material, leaves: Material, solid: bool = true, canopy: Callable = Callable()) -> void:
+	super.tree(at, height, seed_, bark, leaves, solid, canopy)
+	if collect_revelation_sites:
+		revelation_sites.append({"at": at, "distant": false})
 
 
 static func outline_for(half: Vector2, door_width: float, variant: int) -> PackedVector2Array:
@@ -217,6 +226,8 @@ func backdrop(half: Vector2, outline: PackedVector2Array, links: Dictionary, var
 			var height := rng.randf_range(2.0, 4.5)
 			var spread := rng.randf_range(3.9, 5.3)
 			var light := lerpf(.86, .51, depth) * rng.randf_range(.87, 1.04)
+			if collect_revelation_sites and distance < 18.0:
+				revelation_sites.append({"at": at, "distant": true})
 			if distance < 9.0 and seed_ % 3 == 0:
 				tube([at, at + Vector3(.10, height * .60, -.11), at + Vector3(-.16, height, .15)],
 					.19, mats.bark, .30)
@@ -329,6 +340,8 @@ func thicket(a: Vector3, b: Vector3, seed_: int) -> void:
 	for index in clumps:
 		var variation := .5 + .5 * sin(seed_ * 1.7 + index * 3.1)
 		var at := a.lerp(b, (index + .5) / clumps) + out * (.56 + variation * .40)
+		if collect_revelation_sites and posmod(seed_ + index, 3) == 0:
+			revelation_sites.append({"at": at - out * 1.12, "distant": false, "underbrush": true})
 		_leaf_cluster(at + Vector3.UP * (.64 + variation * .24),
 			Vector3(2.9, 1.30 + variation * .48, 2.3), seed_ + index)
 		_leaf_cluster(at + out * 1.26 + Vector3.UP * (.83 + variation * .34),

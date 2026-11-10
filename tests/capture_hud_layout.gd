@@ -77,7 +77,7 @@ func ui_shot(mark: String) -> void:
  for p in panels:check(bounds.grow(.5).encloses(p.get_global_rect()),"panel insideviewport "+str(p.name))
  for i in range(panels.size()):
   for j in range(i+1,panels.size()):check(not panels[i].get_global_rect().intersects(panels[j].get_global_rect()),"no paneloverlap "+str(i)+"/"+str(j))
- for entry in [[ui.health_text,ui.vital_panel],[ui.health_bar,ui.vital_panel],[ui.ammo_text,ui.ammo_panel],[ui.reload_bar,ui.ammo_panel],[ui.counter,ui.ammo_panel],[ui.control_hint,ui.help_panel],[ui.weapon_hint,ui.help_panel],[ui.ready_text,ui.help_panel],[ui.stage_text,ui.help_panel],[ui.objective,ui.header_panel]]:
+ for entry in [[ui.mana_bar,ui.vital_panel],[ui.health_bar,ui.vital_panel],[ui.ammo_text,ui.ammo_panel],[ui.reload_bar,ui.ammo_panel],[ui.counter,ui.ammo_panel],[ui.control_hint,ui.help_panel],[ui.weapon_hint,ui.help_panel],[ui.ready_text,ui.help_panel],[ui.stage_text,ui.help_panel],[ui.objective,ui.header_panel]]:
   if entry[0].is_visible_in_tree():check(entry[1].get_global_rect().grow(.5).encloses(entry[0].get_global_rect()),"label/bar inside its panel "+str(entry[0].name))
  check(ui.health_bar.get_global_rect().position.y<bounds.size.y*.5 and ui.health_bar.get_global_rect().end.x<bounds.size.x*.5,"health upperleft")
  check(ui.ammo_panel.get_global_rect().position.x>bounds.size.x*.5 and ui.ammo_panel.get_global_rect().end.y<bounds.size.y*.5,"ammo upperright")

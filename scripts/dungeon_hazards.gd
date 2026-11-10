@@ -3,10 +3,12 @@ extends Node3D
 const WetlandArt = preload("res://scripts/dungeon_wetland_art.gd")
 const Wetland = preload("res://scripts/dungeon_wetland.gd")
 const SporePatch = preload("res://scripts/dungeon_spore_patch.gd")
+const RootAmbush = preload("res://scripts/dungeon_root_ambush.gd")
 
 var feature: String
 var wetland_zones: Array[Dictionary] = []
 var _spore_patches: Array[SporePatch] = []
+var root_ambush: RootAmbush
 var _ripple_left := 0.0
 
 
@@ -18,6 +20,9 @@ func configure(kind: String, outline: PackedVector2Array, seed_: int, poison_gro
 			_draw_wetland()
 		"mushrooms":
 			_build_spore_patches(poison_groups)
+			root_ambush = RootAmbush.new()
+			add_child(root_ambush)
+			root_ambush.setup(outline, hash([seed_, "root_ambush"]))
 
 
 func _draw_wetland() -> void:
@@ -153,3 +158,5 @@ func tick(delta: float, game) -> void:
 		return
 	for patch in _spore_patches:
 		patch.tick(delta, game)
+	if root_ambush != null and game.mode == "combat":
+		root_ambush.tick(delta, game)

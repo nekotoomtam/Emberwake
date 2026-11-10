@@ -28,6 +28,7 @@ var _syncing := false
 class BodyDiagram extends Control:
  var states: Dictionary = {}
  func _draw() -> void:
+  draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE * .72)
   var shapes := {
    "head":Rect2(33,3,24,23), "torso":Rect2(27,31,36,43),
    "right_upper_arm":Rect2(12,32,12,23), "left_upper_arm":Rect2(66,32,12,23),
@@ -93,26 +94,32 @@ func _button(text: String, action: Callable, parent: Node) -> Button:
 
 func _build_compact() -> void:
  compact=PanelContainer.new()
- compact.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
- compact.position=Vector2(20,124)
- compact.size=Vector2(118,166)
+ surface.add_child(compact)
+ compact.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+ compact.offset_left=8
+ compact.offset_right=96
+ compact.grow_vertical=Control.GROW_DIRECTION_BEGIN
+ compact.offset_top=-138
+ compact.offset_bottom=-8
  compact.mouse_filter=Control.MOUSE_FILTER_IGNORE
  var style:=_box()
+ style.bg_color=Color("#22221f")
+ style.border_color=Color("#89734f")
+ style.set_border_width_all(2)
  style.set_content_margin_all(7)
  compact.add_theme_stylebox_override("panel",style)
- surface.add_child(compact)
  var column:=VBoxContainer.new()
  column.add_theme_constant_override("separation",3)
  column.mouse_filter=Control.MOUSE_FILTER_IGNORE
  compact.add_child(column)
- var title:=_label("สภาพร่างกาย [B]",13,WARN)
+ var title:=_label("[B]",13,WARN)
  title.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
  column.add_child(title)
  var center:=CenterContainer.new()
  center.mouse_filter=Control.MOUSE_FILTER_IGNORE
  column.add_child(center)
  diagram=BodyDiagram.new()
- diagram.custom_minimum_size=Vector2(90,134)
+ diagram.custom_minimum_size=Vector2(65,97)
  diagram.mouse_filter=Control.MOUSE_FILTER_IGNORE
  center.add_child(diagram)
 

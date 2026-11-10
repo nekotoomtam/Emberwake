@@ -27,7 +27,7 @@ func set_view(id: StringName,seconds: float=.8) -> void:
  if id==&"market":at=PlazaProfile.FOUNTAIN+Vector3(3,11,14);target=PlazaProfile.FOUNTAIN+Vector3(0,1,-2);_target_fov=52
  if id==&"port":at=Vector3(17,26,5);target=Vector3(-12,2,-82);_target_fov=54
  if id==&"quay":at=Vector3(15,11,19);target=Vector3(7,3,-5);_target_fov=47
- if id==&"boarding":at=Vector3(8.95,4.30,-4.28);target=Vector3(8.65,3.48,-9.15);_target_fov=58
+ if id==&"boarding":at=Vector3(8.95,3.65,-3.6);target=Vector3(8.75,3.45,-9.15);_target_fov=52
  _to=Transform3D(Basis.looking_at(target-at),at)
  if seconds<=0:transform=_to;fov=_target_fov
 func frame_open_water(ship_at: Vector3) -> void:
@@ -46,6 +46,10 @@ func follow_actor(at: Vector3,delta: float) -> void:
  var desired: Vector3=at+Vector3(2.9,7.8,10.2)
  var facing:=Basis.looking_at(Vector3(0,-6.1,-13.4))
  transform=transform.interpolate_with(Transform3D(facing,desired),1-exp(-delta*2.4))
+
+func view_settled() -> bool:
+ return not flying and _age>=_duration
+
 func tick(delta: float) -> void:
  if _duration<=0:return
  if flying:

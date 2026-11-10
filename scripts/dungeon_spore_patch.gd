@@ -7,10 +7,15 @@ const WARNING := .55
 const ACTIVE := 2.60
 const COOLDOWN := 2.4
 const PULSE := .65
-const DAMAGE := 4.0
-const INTEGRITY_LOSS := 1.0
+const SANITY_PER_PULSE := 4
+const PUFF_COUNT := 7
 var cloud: Node3D
 var ring: MeshInstance3D
+var _cloud_material: ShaderMaterial
+var _haze_material: ShaderMaterial
+var _haze: MeshInstance3D
+var _puffs: Array[MeshInstance3D] = []
+var _puff_origins := PackedVector3Array()
 var _cycle := -1.0
 var _next_pulse := WARNING
 
@@ -18,12 +23,29 @@ var _next_pulse := WARNING
 func setup(seed_: int) -> void:
 	cloud = Node3D.new()
 	add_child(cloud)
-	var fog := PlaneMesh.new()
-	fog.size = Vector2.ONE * (RADIUS * 2.0)
-	_cloud_layer(fog, Vector3.UP * .13, 0.0, seed_)
-	var plume := QuadMesh.new()
-	plume.size = Vector2(RADIUS * 2.0, 1.43)
-	_cloud_layer(plume, Vector3(0, .62, 0), -.58, seed_)
+	_cloud_material = ShaderMaterial.new()
+	_cloud_material.shader = CloudShader
+	_cloud_material.render_priority = -1
+	_haze_material = ShaderMaterial.new()
+	_haze_material.shader = CloudShader
+	_haze_material.render_priority = -2
+	_haze_material.set_shader_parameter("ground_haze", true)
+	var haze_mesh := PlaneMesh.new()
+	haze_mesh.size = Vector2.ONE * (RADIUS * 2.0)
+	_haze = _mesh(haze_mesh, _haze_material, Vector3.UP * .12)
+	cloud.add_child(_haze)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_
+	var puff_mesh := QuadMesh.new()
+	puff_mesh.size = Vector2(1.44, 1.24)
+	for i in PUFF_COUNT:
+		var angle := TAU * i / PUFF_COUNT + rng.randf_range(-.22, .22)
+		var distance := rng.randf_range(.22, .77)
+		var origin := Vector3(cos(angle) * distance, rng.randf_range(.23, .78), sin(angle) * distance)
+		var puff := _mesh(puff_mesh, _cloud_material, origin)
+		cloud.add_child(puff)
+		_puffs.append(puff)
+		_puff_origins.append(origin)
 	cloud.hide()
 
 	var outline := TorusMesh.new()
@@ -39,15 +61,21 @@ func setup(seed_: int) -> void:
 	ring.hide()
 
 
-func _cloud_layer(mesh: Mesh, at: Vector3, tilt: float, seed_: int) -> void:
-	var material := ShaderMaterial.new()
-	material.shader = CloudShader
-	material.render_priority = -1
-	material.set_shader_parameter("phase", float(posmod(seed_, 628)) * .01)
-	material.set_shader_parameter("plume", mesh is QuadMesh)
-	var layer := _mesh(mesh, material, at)
-	layer.rotation.x = tilt
-	cloud.add_child(layer)
+func _animate_cloud(elapsed: float) -> void:
+	var fade_out := 1.0 - smoothstep(ACTIVE - .65, ACTIVE, elapsed)
+	var density := smoothstep(0.0, .30, elapsed) * fade_out
+	_cloud_material.set_shader_parameter("density", density)
+	var rise := clampf(elapsed / ACTIVE, 0.0, 1.0)
+	var haze_spread := smoothstep(0.0, .24, elapsed)
+	_haze_material.set_shader_parameter("density", lerpf(.4, 1.0, haze_spread) * fade_out)
+	_haze.scale = Vector3.ONE * lerpf(.94, 1.0, haze_spread)
+	for i in _puffs.size():
+		var puff := _puffs[i]
+		var origin := _puff_origins[i]
+		var sway := elapsed * 2.0 + i * 1.7
+		puff.position = Vector3(origin.x * (.75 + rise * .40), origin.y + rise * .62, origin.z)
+		puff.position += Vector3(sin(sway), sin(sway * .6), cos(sway)) * .10
+		puff.scale = Vector3.ONE * (.76 + rise * .34 + .12 * sin(i * 2.3))
 
 
 func _mesh(mesh: Mesh, material: Material, at: Vector3) -> MeshInstance3D:
@@ -94,6 +122,8 @@ func tick(delta: float, game) -> void:
 	var active := not warning and _cycle < WARNING + ACTIVE
 	ring.visible = warning
 	cloud.visible = active
+	if active:
+		_animate_cloud(_cycle - WARNING)
 	if _cycle >= WARNING + ACTIVE + COOLDOWN: _cycle = -1.0
 
 
@@ -108,10 +138,6 @@ func _has_trigger(game) -> bool:
 
 func _poison(game) -> void:
 	if _in_spores(game.player.global_position, RADIUS):
-		game.receive_forest_poison(DAMAGE, INTEGRITY_LOSS)
-	for actor in game.companions:
-		if not actor.downed and _in_spores(actor.global_position, RADIUS):
-			actor.receive_forest_poison(DAMAGE, INTEGRITY_LOSS)
-	for actor in game.enemies:
-		if is_instance_valid(actor) and not actor.dead and _in_spores(actor.global_position, RADIUS):
-			actor.receive_burn(DAMAGE)
+		var available: int = game.SANITY_REVELATION - game.sanity
+		if available > 0:
+			game.add_sanity(mini(SANITY_PER_PULSE, available))

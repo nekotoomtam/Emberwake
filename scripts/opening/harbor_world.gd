@@ -14,11 +14,15 @@ var _looks_rng:=RandomNumberGenerator.new()
 var _hair_bag: Array[int]=[]
 var townspeople: Array=[]
 var crew: Array=[]
+var captain: Node3D
 var pigeons: Array=[]
 var _barrier_count:=0
 var materials: Dictionary={}
 var main
 var ship
+var departure_offset:=Vector3.ZERO
+var departure_heading:=0.0
+var departure_moorings: Node3D
 var arrival
 var ship_water: Node3D
 var departure_supplies: Node3D
@@ -67,7 +71,7 @@ func _ready() -> void:
  ship=Ship.new();ship.name="IntactDepartureVessel";ship.materials=materials;ship.position=Vector3(7,-.55,-7.6);add_child(ship)
  ship_water=WaterContact.new();ship_water.hull=ship.visual_root;ship_water.phase=2.1;add_child(ship_water)
  # Mooring lines lead from the actual hull to bollards on the quay.
- var ropes=Detail.new();add_child(ropes)
+ var ropes=Detail.new();add_child(ropes);departure_moorings=ropes
  for x in [-3.0,4.0,13.0]:ropes.beam(Vector3(x,1.7,-4.2),Vector3(x+1,.45,1.9),.035,materials.rope)
  ropes.finish();geometry_count+=ship.geometry_count+lighthouse.geometry_count+backdrop.geometry_count
  arrival=preload("res://scripts/opening/arrival_vessel.gd").new();arrival.materials=materials;add_child(arrival);geometry_count+=arrival.geometry_count
@@ -200,8 +204,10 @@ func _living_harbor() -> void:
  _new_npc({"id":"deck_sweeper","hair":"8c7152","coat":"697f8e","hat":"c7c6ae","broom":true,"speed":.65,"phase":4},sweep_path,true,true)
  var tie_path: Array[Vector3]=[Vector3(1.1,deck,-4.9)]
  _new_npc({"id":"deck_ropehand","hair":"6b5b4a","coat":"6c8790","hat":"c7c6ae","phase":6},tie_path,true,true)
- var mate_path: Array[Vector3]=[Vector3(18.5,deck,-6.4)]
- _new_npc({"id":"deck_mate","hair":"817b71","coat":"3f5a6b","hat":"4b5c6c","beard":true,"phase":3},mate_path,true,true)
+ var helm := Vector3(Ship.HELM_X*Ship.LENGTH_SCALE-.72,2.865,0.0)
+ var mate_path: Array[Vector3]=[ship.position+helm]
+ captain=_new_npc({"id":"deck_mate","hair":"817b71","coat":"3f5a6b","hat":"4b5c6c","beard":true,"phase":3},mate_path,false,true)
+ captain.aim=Vector3.RIGHT
  var tools=Detail.new();tools.name="DepartureSupplies";add_child(tools)
  departure_supplies=tools
  tools.finish();geometry_count+=tools.count
@@ -238,11 +244,12 @@ func _solid_box(at: Vector3,size_: Vector3) -> void:
 func _walking_surfaces() -> void:
  for x in range(-12,13):
   var width: float=4.0*pow(sin((x+14.2)/28.4*PI),.45)
-  _solid_box(ship.position+Vector3(x,2.8,0),Vector3(.99,.13,width*2))
+  var along: float=x*Ship.LENGTH_SCALE
+  _solid_box(ship.position+Vector3(along,2.8,0),Vector3(.99*Ship.LENGTH_SCALE,.13,width*2))
   for side in [-1.0,1.0]:
    if absf(float(x)-Gangway.ENTRY_LOCAL_X)<Gangway.WIDTH*.5+.60:continue
-   _solid_box(ship.position+Vector3(x,3.25,side*width),Vector3(1.0,.9,.12))
- _solid_box(ship.position+Vector3(-9.5,4.1,0),Vector3(5,2.5,5.1))
+   _solid_box(ship.position+Vector3(along,3.25,side*width),Vector3(Ship.LENGTH_SCALE,.9,.12))
+ _solid_box(ship.position+Vector3(-9.5*Ship.LENGTH_SCALE,4.1,0),Vector3(5*Ship.LENGTH_SCALE,2.5,5.1))
  _ramp_surface(Gangway.DEPARTURE_SHORE,Gangway.DEPARTURE_DECK,Gangway.WIDTH,Gangway.DEPARTURE_LANDING,"BoardingGangwayFloor")
  for side in [-1.0,1.0]:_boarding_rail(side)
  _ramp_surface(Vector3(7,.045,3.2),Vector3(7,.43,2.5),3.8,Vector3(7,.43,2.1))
@@ -277,7 +284,10 @@ func _seated_hero() -> void:
   var puff:=Sprite3D.new();puff.texture=ImageTexture.create_from_image(image);puff.pixel_size=.007;puff.shaded=false;puff.texture_filter=BaseMaterial3D.TEXTURE_FILTER_LINEAR;puff.transparency=.35;add_child(puff);steam.append(puff)
 func tick(delta: float,camera: Camera3D) -> void:
  clock+=delta
- ship.visual_root.transform=Swell.pose(clock,0.0,2.1)
+ var swell := Swell.pose(clock,0.0,2.1)
+ ship.visual_root.transform = Transform3D(Basis(Vector3.UP, departure_heading), Vector3.ZERO) * swell
+ ship.visual_root.position+=departure_offset
+ departure_moorings.visible=departure_offset.is_zero_approx()
  departure_supplies.transform=ship.transform*ship.visual_root.transform*ship.transform.affine_inverse()
  ship_water.tick(delta)
  arrival.tick(delta,camera);backdrop.set_arrival_ready(arrival.docked);_tick_population(delta,camera);backdrop.tick(delta,camera,clock)
@@ -311,12 +321,18 @@ func tick(delta: float,camera: Camera3D) -> void:
   var t:=fposmod(clock*.30+i*.2,1)
   steam[i].global_basis=camera.global_basis;steam[i].global_position=cup.global_position+Vector3(sin(t*5+i)*.035,.09+t*.55,0);steam[i].modulate.a=(1-t)*.8;steam[i].scale=Vector3.ONE*(.6+t*.7)
 
+func set_boarding_crew_only(active: bool) -> void:
+ for actor in crew:
+  if actor!=captain:actor.visible=not active
+
 func _tick_population(delta: float,camera: Camera3D) -> void:
  var positions: Array[Vector3]=[anchors.cafe]
  for npc in townspeople+crew:
+  if npc in crew and not npc.visible:continue
   if not npc.get_meta("social_life_owned",false):npc.tick(delta,camera,clock)
   positions.append(npc.global_position)
- for npc in crew:npc.apply_deck_offset(main_ship_offset(npc.global_position),camera)
+ for npc in crew:
+  if npc.visible:npc.apply_deck_offset(main_ship_offset(npc.global_position),camera)
  for bird in pigeons:bird.tick(delta,camera,clock,positions)
 func main_ship_offset(rest_world_point: Vector3) -> Vector3:
  var local: Vector3=ship.global_transform.affine_inverse()*rest_world_point

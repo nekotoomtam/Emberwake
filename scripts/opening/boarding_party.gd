@@ -3,6 +3,7 @@ extends CanvasLayer
 signal confirmed(party: Array[Dictionary])
 signal cancelled
 
+const CharacterStats = preload("res://scripts/character_stats.gd")
 const Flask = preload("res://scripts/health_flask.gd")
 const Stage = preload("res://scripts/opening/boarding_stage.gd")
 const Look = preload("res://modular/scripts/city_npc_pose.gd")
@@ -48,6 +49,7 @@ class RecruitCard extends PanelContainer:
 	func _drop_data(_at_position: Vector2, data: Variant) -> void:
 		board.assign(data.recruit, slot)
 
+var attribute_seed := randi()
 var recruits: Array[Dictionary] = []
 var slots: Array[int] = [0, 1, 2]
 var slot_cards: Array[RecruitCard] = []
@@ -62,12 +64,14 @@ var gear_tab: Button
 var gear_title: Label
 var gear_position: Label
 var gear_weapon: Label
+var gear_attributes: Label
 var gear_top: OptionButton
 var gear_bottom: OptionButton
 var flask_count: Label
 var flask_minus: Button
 var flask_plus: Button
 var selected_slot := 0
+var _departing := false
 
 
 func _ready() -> void:
@@ -174,6 +178,8 @@ func _ready() -> void:
 func roll() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
+	var attributes_rng := RandomNumberGenerator.new()
+	attributes_rng.seed = attribute_seed
 	var previous := recruits.duplicate()
 	recruits.clear()
 	var used: Dictionary = {}
@@ -193,6 +199,7 @@ func roll() -> void:
 		var portrait: Texture2D = Look.frame(look, "front", "idle", 0).texture
 		recruits.append({"name": profile[0], "role": profile[1], "weapon_label": profile[2],
 			"weapon": profile[3], "look": look, "portrait": portrait,
+			"attributes": CharacterStats.roll_level_one(attributes_rng),
 			"flasks": previous[index].flasks if index < previous.size() else Flask.RUN_CHARGES})
 	refresh_cards()
 
@@ -231,6 +238,8 @@ func build_gear(parent: VBoxContainer) -> void:
 	gear_view.add_child(gear_title)
 	gear_weapon = caption("", 17, MUTED)
 	gear_view.add_child(gear_weapon)
+	gear_attributes = caption("", 16, GOLD)
+	gear_view.add_child(gear_attributes)
 	gear_view.add_child(HSeparator.new())
 	gear_top = outfit_option("เสื้อ", "top")
 	gear_bottom = outfit_option("กางเกง", "bottom")
@@ -289,6 +298,7 @@ func refresh_gear() -> void:
 	gear_position.text = POSITIONS[selected_slot] + "  /  ของพก"
 	gear_title.text = "%s  ·  %s" % [recruit.name, recruit.role]
 	gear_weapon.text = "อาวุธประจำตัว   ·   " + recruit.weapon_label
+	gear_attributes.text = CharacterStats.level_one_text(recruit.attributes)
 	fill_outfit_options(gear_top, recruit, "top")
 	fill_outfit_options(gear_bottom, recruit, "bottom")
 	flask_count.text = "%d / %d" % [recruit.flasks, Flask.RUN_CHARGES]
@@ -323,10 +333,27 @@ func change_outfit(part: String, index: int) -> void:
 
 
 func confirm() -> void:
+	if _departing:
+		return
 	var party: Array[Dictionary] = []
 	for id in slots:
 		party.append(recruits[id].duplicate(true))
 	confirmed.emit(party)
+
+
+func set_departing(active: bool) -> void:
+	_departing = active
+	var controls := deck_targets.get_parent() as Control
+	controls.visible = not active
+	for ring: MeshInstance3D in stage.rings:
+		ring.visible = not active
+	if not active:
+		var no_party: Array[Dictionary] = []
+		stage.departure_party = no_party
+		stage.bow_progress = 0.0
+		stage.bow_walk_elapsed = 0.0
+		for index in slots.size():
+			stage.set_portrait(index, Look.frame(recruits[slots[index]].look, "right", "idle", 0).texture)
 
 
 func make_card(slot: int, minimum: Vector2) -> RecruitCard:
@@ -447,6 +474,8 @@ func box(fill: Color, border: Color, padding: float) -> StyleBoxFlat:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
+	if _departing:
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE:
 		get_viewport().set_input_as_handled()
 		cancelled.emit()
