@@ -47,6 +47,6 @@ static func frontal(source: Vector3,position: Vector3,facing: Vector3) -> bool:
  if not source.is_finite():return false
  var incoming:=Vector3(source.x-position.x,0,source.z-position.z)
  return incoming.length_squared()>.00001 and incoming.normalized().dot(facing.normalized())>=BLOCK_DOT-.00001
-func try_parry(source: Vector3,position: Vector3,facing: Vector3,stamina: float,cost: float=PARRY_COST) -> bool:
- if parry_left<=0 or broken_left>0 or stamina<cost or not frontal(source,position,facing):return false
+func try_parry(source: Vector3,position: Vector3,facing: Vector3,stamina: float,cost: float=PARRY_COST,skill_window: bool=false) -> bool:
+ if (parry_left<=0 and not skill_window) or broken_left>0 or stamina<cost or not frontal(source,position,facing):return false
  parry_left=0;parry_flash=.22;parries+=1;return true

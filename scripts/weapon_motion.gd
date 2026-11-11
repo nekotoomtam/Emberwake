@@ -112,6 +112,15 @@ func start(index: int, angle: float) -> bool:
 	busy = true
 	return true
 
+func start_mace_fire_lift(index: int, angle: float) -> bool:
+	if family != "mace": return false
+	var accepted: bool = _mace_motion.start_fire_lift(index, angle)
+	_sync_mace_state()
+	return accepted
+
+func finish_mace_fire_lift() -> void:
+	_mace_motion.fire_lift = false
+
 func definition(index: int) -> Dictionary:
 	if family == "sword":
 		return _sword_motion.definition(index)

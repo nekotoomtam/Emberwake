@@ -11,6 +11,7 @@ const BodyParts = preload("res://scripts/body_parts_visual.gd")
 const CombatCutout = preload("res://modular/scripts/combat_cutout.gd")
 var anatomy = null
 var crawl_ready := false
+var ground_shadow: MeshInstance3D
 var modular_body
 var cutout: CombatCutout
 var cutout_tint := Color.WHITE
@@ -28,6 +29,10 @@ const CrossbowArt = preload("res://scripts/crossbow_art.gd")
 const BowArt = preload("res://scripts/bow_art.gd")
 const RifleArt = preload("res://scripts/rifle_art.gd")
 const PIXEL: float = 0.018
+
+func set_leap_height(height: float) -> void:
+ position.y = height
+ if is_instance_valid(ground_shadow): ground_shadow.position.y = .015 - height
 var pair_body_mask: Sprite3D
 var back_hair: Sprite3D
 var body: AnimatedSprite3D
@@ -69,6 +74,7 @@ func _ready() -> void:
  pair_body_mask.no_depth_test=true;pair_body_mask.render_priority=2;pair_body_mask.visible=false
  body.add_child(pair_body_mask)
  var shadow := MeshInstance3D.new()
+ ground_shadow = shadow
  var disc := CylinderMesh.new()
  disc.top_radius = 0.38
  disc.bottom_radius = 0.38
@@ -190,7 +196,8 @@ func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictiona
   body.animation=prior_animation
   body.frame=mini(prior_frame,next_frames.get_frame_count(prior_animation)-1)
  body.flip_h=false
- var animation: String = "dodge" if dashing else ("death" if dead else ("hit" if hurt > 0.0 else ("attack" if phase != "idle" else ("walk" if walking else "idle"))))
+ var attacking: bool = phase != "idle" and not (walking and sample.get("charge_walk", false))
+ var animation: String = "dodge" if dashing else ("death" if dead else ("hit" if hurt > 0.0 else ("attack" if attacking else ("walk" if walking else "idle"))))
  if body.animation != animation:
   body.animation = animation
   if animation == "death": clock = 0

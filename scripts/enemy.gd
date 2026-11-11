@@ -12,6 +12,8 @@ var active_left:=.0
 var attack_hit:=false
 var _parry_flash:=.0
 const MaceArmor=preload("res://scripts/mace_armor.gd")
+const MACE_PULL_TIME := .22
+const MACE_PULL_CENTER_RADIUS := .34
 var mace_armor=MaceArmor.new()
 var rifle_mark=preload("res://scripts/rifle_mark.gd").new()
 const Art = preload("res://scripts/pixel_art.gd")
@@ -27,6 +29,11 @@ var state: String = "chase"
 var telegraph_left: float = 0.0
 var cooldown: float = 0.5
 var stagger: float = 0.0
+var movement_slow := 0.0
+var movement_slow_remaining := 0.0
+var movement_slow_duration := 0.0
+var _mace_pull_target := Vector3.ZERO
+var _mace_pull_left := 0.0
 var knockback := Vector3.ZERO
 var target_point := Vector3.ZERO
 var sprite: AnimatedSprite3D
@@ -109,9 +116,9 @@ func apply_armor_break(fraction: float = .2, duration: float = 4.0) -> bool:
 	update_bar()
 	return true
 
-func apply_mace_break() -> bool:
-	if dead or not is_finite(armor_rating) or armor_rating<0:return false
-	mace_armor.add();update_bar();return true
+func apply_mace_break(amount: int = 1, fill: bool = false) -> bool:
+	if dead or not is_finite(armor_rating) or armor_rating<0 or amount<=0:return false
+	mace_armor.add(amount,fill);update_bar();return true
 
 func _clear_armor_break() -> void:
 	mace_armor.clear();rifle_mark.clear()
@@ -156,9 +163,46 @@ func advance_armor_status(delta: float) -> void:
 			armor_break_remaining=0;armor_break_fraction=0
 		update_bar()
 
+func apply_movement_slow(fraction: float, duration: float) -> void:
+	if dead or not is_finite(fraction) or not is_finite(duration) or fraction <= 0.0 or duration <= 0.0: return
+	movement_slow = minf(fraction, 1.0)
+	movement_slow_remaining = duration
+	movement_slow_duration = duration
+
+func movement_speed_scale() -> float:
+	return 1.0 - movement_slow
+
+func gather_to(center: Vector3) -> void:
+	var offset := global_position - center
+	offset.y = 0.0
+	if dead or offset.length_squared() <= MACE_PULL_CENTER_RADIUS ** 2: return
+	_mace_pull_target = center + offset.normalized() * MACE_PULL_CENTER_RADIUS
+	_mace_pull_left = MACE_PULL_TIME
+	knockback = Vector3.ZERO
+	stagger = maxf(stagger, MACE_PULL_TIME)
+
+func _advance_mace_pull(delta: float) -> void:
+	if _mace_pull_left <= 0.0 or dead: return
+	var offset := _mace_pull_target - global_position
+	offset.y = 0.0
+	var step := minf(delta, _mace_pull_left)
+	var collision := move_and_collide(offset * (step / _mace_pull_left), false, .001)
+	_mace_pull_left -= step
+	if collision == null: return
+	if collision.get_normal().y > .7:
+		collision = move_and_collide(collision.get_remainder().slide(collision.get_normal()), false, .001)
+	if collision != null: _mace_pull_left = 0.0
+
+func advance_combat_status(delta: float) -> void:
+	advance_armor_status(delta)
+	if not is_finite(delta) or delta <= 0.0: return
+	_advance_mace_pull(delta)
+	movement_slow_remaining = 0.0 if dead else maxf(0.0, movement_slow_remaining - delta)
+	if movement_slow_remaining == 0.0: movement_slow = 0.0
+
 func tick(delta: float, game, advance_status: bool = true) -> void:
 	if not is_finite(delta) or delta <= 0: return
-	if advance_status: advance_armor_status(delta)
+	if advance_status: advance_combat_status(delta)
 	clock += delta
 	_parry_flash=maxf(0,_parry_flash-delta)
 	sprite.global_basis = game.camera.global_basis
@@ -213,7 +257,7 @@ func tick(delta: float, game, advance_status: bool = true) -> void:
 					var away: Vector3=position-other.position;away.y=0
 					if away.length()>.01 and away.length()<.8:move+=away.normalized()*1.5
 	knockback = knockback.move_toward(Vector3.ZERO, delta * 14)
-	velocity = move + knockback
+	velocity = move * movement_speed_scale() + knockback
 	velocity.y = -2.0
 	move_and_slide()
 	sprite.animation = "hit" if _hurt_time > 0 else ("attack" if state in ["windup","attack","recover"] else ("walk" if move.length() > 0.1 else "idle"))

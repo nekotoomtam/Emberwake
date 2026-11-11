@@ -74,7 +74,7 @@ func line_of_sight(target: Vector3) -> bool:
  return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 func tick(delta: float,game,advance_status: bool=true) -> void:
  if not is_finite(delta) or delta<=0:return
- if advance_status:advance_armor_status(delta)
+ if advance_status:advance_combat_status(delta)
  # Bound steps preserve impact timing and collision sweeps on coarse game ticks.
  var left:=delta
  while left>0:
@@ -93,7 +93,7 @@ func _advance(delta: float,game) -> void:
  if returning:
   var home:=home_position-global_position;home.y=0
   if home.length()<.25:returning=false;state="idle"
-  elif stagger<=0:_move(home.normalized()*float(_stats.speed)*delta,game)
+  elif stagger<=0:_move(home.normalized()*float(_stats.speed)*movement_speed_scale()*delta,game)
  elif stagger<=0:
   if state=="windup":
    telegraph_left=maxf(0,telegraph_left-delta)
@@ -127,7 +127,7 @@ func _advance(delta: float,game) -> void:
      else:
       var move:=direction*float(_stats.speed) if distance>float(next.trigger)*.88 or not aligned else Vector3.ZERO
       if int(next.projectiles)>0 and distance<2.8:move=-direction*float(_stats.speed)
-      _move(_steer(move,game)*delta,game)
+      _move(_steer(move,game)*movement_speed_scale()*delta,game)
    else:state="idle"
  knockback=knockback.move_toward(Vector3.ZERO,delta*14)
  if knockback.length_squared()>.001:_move(knockback*delta,game)
@@ -139,7 +139,7 @@ func _advance_distant_chase(delta: float,game,offset: Vector3) -> bool:
   _distant_chase_velocity = _steer(offset.normalized() * float(_stats.speed),game)
  _last_distant_chase_frame = frame
  # Movement and swept collision still run on every physics step.
- _move(_distant_chase_velocity * delta,game)
+ _move(_distant_chase_velocity * movement_speed_scale() * delta,game)
  return true
 
 func _attack_definition(index: int) -> Dictionary:return Roster.attack(kind,index)

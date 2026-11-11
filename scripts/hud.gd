@@ -611,21 +611,9 @@ func show_mode(mode: String) -> void:
 	match mode:
 		"menu":
 			title.text = "EMBERWAKE"
-			description.text = "ชายหาดร้าง • ศัตรูชายฝั่ง 5 ประเภท • นายท้ายสมอ\nอำพัน: ปัดได้ • แดง: ปัดไม่ได้ • ขอบเติม: จังหวะโจมตี\nR รีโหลด • Q สลับชุด • I เปิดของ • T เริ่มใหม่"
+			description.text = "เลือกฉากที่ต้องการเล่น\nอำพัน: ปัดได้ • แดง: ปัดไม่ได้ • ขอบเติม: จังหวะโจมตี\nR รีโหลด • Q สลับชุด • I เปิดของ • T เริ่มใหม่"
 			buttons.add_child(button("เริ่มเรื่อง • คลื่นพัดเกยฝั่ง",game.start_wreck_shore))
-			buttons.add_child(button("เส้นทางเลียบฝั่ง • ทดลอง 5 รูปแบบ",game.start_coast_forms))
-			buttons.add_child(button("หมู่บ้านร้าง • ทดลองภาพชายหาดถึงบ้าน",game.start_village_study))
-			buttons.add_child(button("ผู้สำรอกน้ำเค็ม • สายอ้วกและคราบพิษ",game.start_spitter_trial))
-			buttons.add_child(button("ลูกเรือลากอวน • ค้อนฟาดหนัก",game.start_net_hauler_trial))
-			buttons.add_child(button("ลูกเรือ • ขว้างฉมวก",game.start_crewman_trial))
-			buttons.add_child(button("หมาน้ำเค็ม • กระโจนกัดแล้วกัดซ้ำ",game.start_brinehound_trial))
-			buttons.add_child(button("ชาวประมง • ทดลองภาพ 4 มุม",game.start_fisherman_trial))
-			buttons.add_child(button("ชายหาดร้าง • สำรวจและต่อสู้",game.start_coast))
 			buttons.add_child(button("ด่านสุ่ม • 30–50 ห้อง",game.start_dungeon))
-			buttons.add_child(button("ท่าเรือ • นายท้ายผู้ลากสมอ",game.start_captain))
-			buttons.add_child(button("ซ้อมกับหุ่น", func(): game.start_run(true)))
-			buttons.add_child(button("ฝึกปัด • มอนตัวเดียว",func():game.start_parry_drill()))
-			buttons.add_child(button("เข้าลานประลอง", func(): game.start_run(false)))
 			buttons.add_child(button("ออกจากเกม", func(): get_tree().quit()))
 		"paused":
 			title.text = "พักที่ลานเถ้า"
@@ -647,7 +635,6 @@ func show_mode(mode: String) -> void:
 				title.text="นายท้ายล้มแล้ว";description.text="ท่าเรือสงบลง • %.1f วินาที\nตัดแขนควบคุมโซ่เพื่อหยุดท่าขว้างได้"%game.run_time
 				buttons.add_child(button("สู้กับนายท้ายอีกครั้ง",game.start_captain))
 			else:buttons.add_child(button("ประลองอีกครั้ง", func(): game.start_run(false)))
-			buttons.add_child(button("กลับไปซ้อม", func(): game.start_run(true)))
 			buttons.add_child(button("กลับหน้าหลัก", game.return_menu))
 		"shore_end":
 			title.text="แนวป่าเบื้องหน้า"
@@ -701,7 +688,7 @@ func refresh() -> void:
 	reload_bar.visible = gun and magazine.reloading
 	reload_bar.value = magazine.progress()
 	control_hint.text = "WASD เดิน  •  ซ้ายโจมตี  •  ขวาค้าง: เล็ง / การ์ด  •  SPACE หลบ"
-	var weapon_details: String = ("คลิกค้าง: ยิงซ้ำ    |    R รีโหลด    " if gun else ("คลิกค้าง: ยิงท่าเดิมซ้ำ    |    " if game.weapon_family == "staff" else "คลิกค้าง: 3 จังหวะ    |    ")) + ("" if game.sword_skills_available() else "") + "Q สลับชุด    I ของ    H ดูระยะ    T เริ่มใหม่    P สถานะ    ESC พัก    M เสียง"
+	var weapon_details: String = ("คลิกค้าง: ยิงซ้ำ    |    R รีโหลด    " if gun else ("คลิกค้าง: ยิงท่าเดิมซ้ำ    |    " if game.weapon_family == "staff" else "คลิกค้าง: 3 จังหวะ    |    ")) + ("1 / 2 / 3 สกิล • K เลือกสกิล    |    " if game.primary_family() == "sword" else "") + "Q สลับชุด    I ของ    H ดูระยะ    T เริ่มใหม่    P สถานะ    ESC พัก    M เสียง"
 	if game.weapon_family=="greatsword":weapon_details="ท่า1–2: ค้างชาร์จ / ปล่อยฟัน • ท่า3: คลิกฟาด | Q ชุด I ของ P สถานะ SPACE หลบ"
 	weapon_button.disabled = game.motion.busy or game.guns_reloading() or game._dodge_left > 0 or game.mode not in ["menu", "practice", "combat"]
 	if game.loadout_mode:
@@ -776,6 +763,8 @@ func refresh() -> void:
 		stage_label = "Ⅰ  กวาดข้าง" if game.motion.stage == 0 else ("Ⅱ  กวาดกลับ" if game.motion.stage == 1 else "Ⅲ  ฟาดตรง")
 	if game.weapon_family == "mace" and game.motion.busy:
 		stage_label = "Ⅰ  ฟาดขึ้น" if game.motion.stage == 0 else ("Ⅱ  พุ่งตี" if game.motion.stage == 1 else "Ⅲ  ฟาดลง")
+		if game.motion.definition(game.motion.stage).get("kind") == "fire_lift":
+			stage_label = "งัดเพลิง • งัดซ้าย" if game.motion.stage == 0 else "งัดเพลิง • งัดขวา"
 	if game.weapon_family == "staff":
 		stage_label = {"windup": "เตรียมยิง", "active": "ปล่อยลูกไฟ", "recovery": "คืนท่า"}.get(phase, "ลูกไฟ • ระเบิดวงเล็ก")
 	if pistol:
@@ -783,7 +772,15 @@ func refresh() -> void:
 	if rifle:
 		stage_label = "รีโหลดปืนยาว" if game.active_magazine().reloading else {"windup": "ประทับยิง", "active": "ยิง / แรงถอย", "recovery": "คืนท่า"}.get(phase, "ปืนยาว • 5 นัด")
 	if game.skill_active:
-		if game.active_skill_id == "armor_pierce":
+		if game.SwordSkillMotion.SKILLS.has(game.active_skill_id):
+			var skill_name: String = game.SwordSkillMotion.SKILLS[game.active_skill_id].name
+			stage_label = "%s • %s" % [skill_name, {"windup": "ง้าง", "active": "โจมตี", "recovery": "คืนท่า"}.get(phase, "")]
+			if game.active_skill_id == "square_off" and game.motion.stage == 0:
+				stage_label = skill_name + " • ซ้ายฟันเสย / ขวาแทง"
+		elif game.MaceSkillMotion.SKILLS.has(game.active_skill_id):
+			var skill_name: String = game.MaceSkillMotion.SKILLS[game.active_skill_id].name
+			stage_label = "%s • %s" % [skill_name, {"windup": "ง้าง", "active": "โจมตี", "recovery": "คืนท่า"}.get(phase, "")]
+		elif game.active_skill_id == "armor_pierce":
 			var action: String = "ฟัน" if game.skill_cut_index == 0 else "แทง / เจาะเกราะ"
 			stage_label = "เจาะเกราะ %d/2 • %s" % [game.skill_cut_index + 1, {"windup": "ง้าง", "active": action, "recovery": "คืนท่า"}.get(phase, "")]
 		else:
@@ -855,7 +852,7 @@ func compact_panel() -> StyleBoxFlat:
 	return style
 func _arrange_status_and_hints(weapon_details: String) -> void:
 	status_view.refresh(game)
-	status_panel.visible=not status_view.shown_effects.is_empty() and game.mode in ["practice","combat"] and not game.inventory_open and not game.stats_open
+	status_panel.visible=not status_view.shown_effects.is_empty() and game.mode in ["practice","combat"] and not game.inventory_open and not game.stats_open and not game.body_lab_open and not game.sword_skills_open and not game.dungeon_peek.visible
 	status_panel.reset_size()
 	var active: bool = game.mode in ["practice", "combat"]
 	var show_resources: bool = active and game.encounter_mode not in ["wreck_shore", "village_study", "coast_forms"]

@@ -5,9 +5,293 @@ var visibility_test: Callable
 var clash_count:=0
 var last_clash:=Vector3.ZERO
 const FireBlastVisual = preload("res://scripts/fire_blast_visual.gd")
+const FireballVisual = preload("res://scripts/fireball_visual.gd")
+const MaceImpactVisual = preload("res://scripts/mace_impact_visual.gd")
+const MaceBasicFlash = preload("res://scripts/mace_basic_flash.gd")
+const MaceSweepVisual = preload("res://scripts/mace_sweep_visual.gd")
+const MacePullVisual = preload("res://scripts/mace_pull_visual.gd")
+const MaceFireScoopVisual = preload("res://scripts/mace_fire_scoop_visual.gd")
+const MaceRiftVisual = preload("res://scripts/mace_rift_visual.gd")
+const MaceLeapWaveVisual = preload("res://scripts/mace_leap_wave_visual.gd")
+const BasicSwordSlash = preload("res://scripts/basic_sword_slash.gd")
+const StormBladeCoat = preload("res://scripts/storm_blade_coat.gd")
+const StormcallerRing = preload("res://scripts/stormcaller_ring_visual.gd")
+const MACE_TRAIL_COLORS := {
+	"basic_lift": Color("#c7d2da"), "basic_slam": Color("#dce3e8"),
+	"mace_impact": Color("#d7a46d"), "mace_sweep": Color("#e9b260"),
+	"mace_double_impact": Color("#ffae54"), "mace_gather": Color("#7af2d7"),
+	"mace_fissure": Color("#ff6e34"), "mace_aftershock": Color("#6bc8b4"),
+	"mace_earth_wave": Color("#ffcf77"), "mace_armor_counter": Color("#c7e5ed"),
+}
 var particles: Array[Dictionary] = []
 var trails: Array[Dictionary] = []
 var fire_blasts: Array[Node3D] = []
+var mace_impacts: Array[Sprite3D] = []
+var _basic_slash: Node3D
+var _double_slash: Node3D
+var _spin_slash: Node3D
+var _double_slash_spark_cast := -1
+var _storm_blade_coat: MeshInstance3D
+var _stormcaller_ring: Sprite3D
+var _mace_swing_key := Vector2i(-1, -1)
+var _mace_swing_blade: Dictionary = {}
+var _mace_embers: Node3D
+var _ember_gradient: GradientTexture2D
+var mace_basic_flash: Sprite3D
+var mace_sweep_flash: Sprite3D
+
+func mace_impact_sprite(center: Vector3, radius: float, style: MaceImpactVisual.Style = MaceImpactVisual.Style.STANDARD) -> Sprite3D:
+	var impact := MaceImpactVisual.new()
+	impact.configure(center, radius, style)
+	add_child(impact)
+	mace_impacts.append(impact)
+	return impact
+
+func mace_ground_contact(center: Vector3, radius: float, strength: float) -> Sprite3D:
+	var impact := MaceImpactVisual.new()
+	impact.configure_contact(center, radius, strength)
+	add_child(impact)
+	mace_impacts.append(impact)
+	return impact
+
+func mace_pull_vortex(center: Vector3, radius: float) -> void:
+	var vortex := MacePullVisual.new()
+	vortex.configure(center, radius)
+	add_child(vortex)
+	mace_impacts.append(vortex)
+
+func mace_rift_decal(center: Vector3, radius: float, angle: float, phase: MaceRiftVisual.Phase, duration: float) -> Sprite3D:
+	var decal := MaceRiftVisual.new()
+	decal.configure(center, radius, angle, phase, duration)
+	add_child(decal, true)
+	if phase != MaceRiftVisual.Phase.PLACEMENT:
+		mace_impacts.append(decal)
+	return decal
+
+func mace_leap_wave(center: Vector3, radius: float, angle: float, arc: float, strength: float) -> void:
+	var wave := MaceLeapWaveVisual.new()
+	wave.configure(center, radius, angle, arc, strength)
+	add_child(wave, true)
+	mace_impacts.append(wave)
+
+func mace_fire_scoop(origin: Vector3, mirrored: bool, soil: bool = false) -> Sprite3D:
+	var flare := MaceFireScoopVisual.new()
+	flare.configure(origin, mirrored, soil)
+	add_child(flare)
+	mace_impacts.append(flare)
+	return flare
+
+func mace_ember_impact(point: Vector3, direction: Vector3, leg: int, on_floor: bool) -> void:
+	var strength: float = [1.0, .80, .66][leg]
+	if on_floor:
+		var impact := MaceImpactVisual.new()
+		impact.name = "MaceEmberContact"
+		impact.configure_ember_contact(point, .85 * strength)
+		add_child(impact, true)
+		mace_impacts.append(impact)
+	mace_ember_spray(point, direction, strength, false)
+
+func mace_ember_spray(point: Vector3, direction: Vector3, strength: float, scoop: bool) -> void:
+	var center := point + Vector3.UP * .065
+	var spark_count := roundi(11.0 * strength)
+	for index in range(spark_count):
+		var spread := lerpf(-1.2, 1.2, float(index) / (spark_count - 1))
+		var speed := 1.05 + .49 * float(index % 4)
+		var lift := .95 + .52 * float((index * 3) % 5)
+		var drift := direction.rotated(Vector3.UP, spread) * speed
+		var hot := index % 3 != 0
+		var size := .14 if hot else .21
+		var color := Color("#ffd084") if hot else Color("#be491d")
+		_add_ember_mote(center, (drift + Vector3.UP * lift) * strength, size, color, .23 + .026 * float(index % 4), 5.0)
+	if scoop:
+		var glow := _add_ember_mote(center, Vector3.ZERO, 1.25, Color("#ff8a30", .85), .16)
+		glow.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		glow.rotation.x = -PI * .5
+
+func mace_ember_trail(point: Vector3, direction: Vector3, age: float) -> void:
+	var offset := Vector3.UP * (sin(age * 90.0) * .08)
+	_add_ember_mote(point - direction * .14 + offset, -direction * .48 + Vector3.UP * .11,
+		.15, Color("#ffac54"), .18)
+	if int(round(age / .036)) % 2 == 0:
+		_add_ember_mote(point - direction * .22 - offset, Vector3.UP * .33 - direction * .36,
+			.37, Color("#a94624", .67), .27)
+
+func _add_ember_mote(point: Vector3, velocity: Vector3, size: float, color: Color, life: float, gravity: float = 0.0) -> Sprite3D:
+	if _ember_gradient == null:
+		var gradient := Gradient.new()
+		gradient.offsets = PackedFloat32Array([0.0, .21, .56, 1.0])
+		gradient.colors = PackedColorArray([Color.WHITE, Color(1.0, .91, .65, .92),
+			Color(1.0, .62, .33, .35), Color(1.0, .38, .20, 0.0)])
+		_ember_gradient = GradientTexture2D.new()
+		_ember_gradient.width = 32
+		_ember_gradient.height = 32
+		_ember_gradient.gradient = gradient
+		_ember_gradient.fill = GradientTexture2D.FILL_RADIAL
+		_ember_gradient.fill_from = Vector2(.5, .5)
+		_ember_gradient.fill_to = Vector2(1.0, .5)
+	var mote := Sprite3D.new()
+	mote.texture = _ember_gradient
+	mote.pixel_size = size / _ember_gradient.width
+	mote.modulate = color
+	mote.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	mote.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mote)
+	mote.global_position = point
+	particles.append({"node": mote, "velocity": velocity, "life": life, "total": life,
+		"gravity": gravity, "ember_opacity": color.a, "sight_point": point})
+	return mote
+
+func mace_basic_head(camera: Camera3D, tip: Vector3, forward: Vector3, progress: float, stage: int, left_hand: bool) -> void:
+	if mace_basic_flash == null:
+		mace_basic_flash = MaceBasicFlash.new()
+		add_child(mace_basic_flash)
+	mace_basic_flash.follow(camera, tip, forward, progress, stage, left_hand)
+
+func mace_sweep_head(camera: Camera3D, tip: Vector3, tangent: Vector3, progress: float, strike: Vector2i, style: MaceSweepVisual.Style = MaceSweepVisual.Style.SWEEP) -> void:
+	if mace_sweep_flash == null:
+		mace_sweep_flash = MaceSweepVisual.new()
+		add_child(mace_sweep_flash)
+	mace_sweep_flash.follow(camera, tip, tangent, progress, strike, style)
+
+func mace_swing(blade: Dictionary, key: Vector2i, skill_id: String) -> void:
+	var previous := _mace_swing_blade
+	_mace_swing_blade = blade
+	if key != _mace_swing_key or blade.is_empty() or previous.is_empty():
+		_mace_swing_key = key
+		return
+	var tip: Vector3 = blade.tip
+	var old_tip: Vector3 = previous.tip
+	var travel := tip.distance_squared_to(old_tip)
+	if travel < .0004 or travel > 1.44: return
+	var color: Color = MACE_TRAIL_COLORS[skill_id]
+	var basic := skill_id in ["basic_lift", "basic_slam"]
+	var basic_finisher := skill_id == "basic_slam"
+	var lifetime := .15 if key.y == 1 or skill_id == "mace_earth_wave" else .105
+	if basic: lifetime = .085 if key.y == 0 else .12
+	var mark := MeshInstance3D.new()
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for inner_fraction: float in [.49 if basic_finisher else .61, .84 if basic_finisher else .91]:
+		var old_inner: Vector3 = previous.grip.lerp(old_tip, inner_fraction)
+		var inner: Vector3 = blade.grip.lerp(tip, inner_fraction)
+		var rim := inner_fraction > .8
+		var tint_color := Color("#fff0ca", .82) if rim else Color(color, .40)
+		if basic: tint_color = Color("#f9fbff", .83 if basic_finisher else .72) if rim else Color(color, .46 if basic_finisher else .28)
+		mesh.surface_set_color(tint_color)
+		for point: Vector3 in [old_inner, old_tip, tip, old_inner, tip, inner]:
+			mesh.surface_add_vertex(point - tip)
+	mesh.surface_end()
+	mark.mesh = mesh
+	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mark.material_override = tint(Color.WHITE)
+	mark.material_override.vertex_color_use_as_albedo = true
+	add_child(mark)
+	mark.global_position = tip
+	trails.append({"node": mark, "life": lifetime, "total": lifetime, "color": Color.WHITE})
+
+func mace_ember_coat(camera: Camera3D, blade: Dictionary, time: float) -> void:
+	if blade.is_empty():
+		if _mace_embers != null: _mace_embers.hide()
+		return
+	if _mace_embers == null:
+		_mace_embers = FireballVisual.new()
+		_mace_embers.configure_contact(.10)
+		add_child(_mace_embers)
+	_mace_embers.global_position = blade.grip.lerp(blade.tip, .93)
+	_mace_embers.update_visual(camera, Vector3.UP, time)
+	_mace_embers.show()
+
+func mace_ground_pulse(center: Vector3, radius: float, angle: float, arc: float, color: Color, inward: bool = false) -> void:
+	var half_arc := arc * .5
+	for band in [Vector3(.79, .36, .30), Vector3(.95, .90, .24)]:
+		var rim_color := Color(color.lerp(Color.WHITE, .34 if band.x > .9 else .0), band.y)
+		var rim := sector(center + Vector3.UP * (.07 if band.x > .9 else .05),
+			radius, angle - half_arc, angle + half_arc, rim_color, radius * band.x, band.z, .08)
+		rim.material_override.no_depth_test = false
+		rim.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var scale_range := Vector2(1.0, .12) if inward else Vector2(.22, 1.0)
+		rim.scale = Vector3(scale_range.x, 1.0, scale_range.x)
+		trails.back()["radial_scale"] = scale_range
+		trails.back()["sight_point"] = center
+
+func basic_sword_slash(camera: Camera3D, grip: Vector3, tip: Vector3, progress: float, stage: int, left_hand: bool) -> void:
+	if _basic_slash == null:
+		_basic_slash = BasicSwordSlash.new()
+		add_child(_basic_slash)
+	_basic_slash.follow(camera, grip, tip, progress, stage, left_hand)
+
+func spin_slash(camera: Camera3D, blade: Dictionary, progress: float, stage: int) -> void:
+	if _spin_slash == null:
+		_spin_slash = BasicSwordSlash.new()
+		_spin_slash.smooth_spin = true
+		add_child(_spin_slash)
+	_spin_slash.follow(camera, blade.grip, blade.tip, progress, stage, false)
+
+func storm_blade_coat(camera: Camera3D, blade: Dictionary, time: float, remaining: float) -> void:
+	if blade.is_empty():
+		if _storm_blade_coat != null: _storm_blade_coat.hide()
+		return
+	if _storm_blade_coat == null:
+		_storm_blade_coat = StormBladeCoat.new()
+		add_child(_storm_blade_coat)
+	_storm_blade_coat.follow(camera, blade.grip, blade.tip, time, minf(1.0, remaining / 0.18))
+
+func stormcaller_ring(origin: Vector3, radius: float, angle: float, final_sweep: bool) -> void:
+	if _stormcaller_ring == null:
+		_stormcaller_ring = StormcallerRing.new()
+		add_child(_stormcaller_ring)
+	_stormcaller_ring.follow(origin, radius, angle, final_sweep)
+
+func vacuum_wake_segment(from: Vector3, to: Vector3) -> void:
+	var side := from.direction_to(to).cross(Vector3.UP)
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for band in [Vector2(0.17, 0.23), Vector2(0.035, 0.95)]:
+		var across: Vector3 = side * band.x
+		var lift := Vector3.ZERO if band.x < 0.1 else Vector3.DOWN * 0.003
+		var end := to - from
+		mesh.surface_set_color(Color("#eefaff", band.y) if band.x < 0.1 else Color("#6cbbd8", band.y))
+		for vertex in [-across, across, end + across, -across, end + across, end - across]:
+			mesh.surface_add_vertex(vertex + lift)
+	mesh.surface_end()
+	var mark := MeshInstance3D.new()
+	mark.mesh = mesh
+	mark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var material := tint(Color.WHITE)
+	material.no_depth_test = false
+	material.vertex_color_use_as_albedo = true
+	mark.material_override = material
+	add_child(mark)
+	mark.global_position = from
+	trails.append({"node": mark, "life": 0.30, "total": 0.30, "color": Color.WHITE})
+
+func double_slash(camera: Camera3D, blade: Dictionary, pose: Dictionary, stage: int, cast_id: int) -> void:
+	if _double_slash == null:
+		_double_slash = BasicSwordSlash.new()
+		_double_slash.double_slash = true
+		add_child(_double_slash)
+	_double_slash.follow(camera, blade.grip, blade.tip, pose.progress, stage, false)
+	if stage == 1 and pose.progress >= 0.12 and _double_slash_spark_cast != cast_id:
+		_double_slash_spark_cast = cast_id
+		_double_slash_sparks(blade.tip, pose.angle)
+
+func _double_slash_sparks(tip: Vector3, angle: float) -> void:
+	var swing := Vector3(-sin(angle), 0.45, cos(angle)).normalized()
+	var radial := Vector3(cos(angle), 0.0, sin(angle))
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.028, 0.028, 0.085)
+	for i in 5:
+		var spread := float(i - 2) * 0.27
+		var velocity := (swing + radial * spread + Vector3.UP * spread * 0.35).normalized() * (1.55 + float(i % 3) * 0.7)
+		var spark := MeshInstance3D.new()
+		spark.mesh = mesh
+		spark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		spark.material_override = tint(Color("#eefbff") if i % 2 == 0 else Color("#75d6ff"))
+		add_child(spark)
+		spark.global_position = tip
+		spark.look_at(tip + velocity)
+		var life := 0.105 + float(i % 3) * 0.02
+		particles.append({"node": spark, "velocity": velocity, "gravity": 1.5, "life": life, "total": life, "sight_point": tip})
 
 func fire_blast(where: Vector3, radius: float, element: String) -> void:
 	if element != "fire" or not where.is_finite() or not is_finite(radius) or radius <= 0: return
@@ -22,6 +306,15 @@ func parry_clash(where: Vector3,perfect: bool=true) -> void:
 	clashes.append(clash);clash_count+=1;last_clash=where
 
 func clear_transients() -> void:
+	if _basic_slash != null: _basic_slash.clear()
+	if _double_slash != null: _double_slash.clear()
+	if _spin_slash != null: _spin_slash.clear()
+	if _storm_blade_coat != null: _storm_blade_coat.hide()
+	if _stormcaller_ring != null: _stormcaller_ring.hide()
+	_mace_swing_blade = {}
+	if _mace_embers != null: _mace_embers.hide()
+	if mace_basic_flash != null: mace_basic_flash.hide()
+	if mace_sweep_flash != null: mace_sweep_flash.hide()
 	for clash in clashes:_remove_transient(clash)
 	clashes.clear()
 	for collection: Array in [particles, trails]:
@@ -30,6 +323,8 @@ func clear_transients() -> void:
 		collection.clear()
 	for blast: Node3D in fire_blasts: _remove_transient(blast)
 	fire_blasts.clear()
+	for impact in mace_impacts: _remove_transient(impact)
+	mace_impacts.clear()
 
 func _remove_transient(node: Node) -> void:
 	if not is_instance_valid(node): return
@@ -45,7 +340,7 @@ func tint(color: Color) -> StandardMaterial3D:
 	material.no_depth_test = true
 	return material
 
-func sector(origin: Vector3, radius: float, from_angle: float, to_angle: float, color: Color, inner: float = 0.0, lifetime: float = 0.12) -> MeshInstance3D:
+func sector(origin: Vector3, radius: float, from_angle: float, to_angle: float, color: Color, inner: float = 0.0, lifetime: float = 0.12, rim_height: float = 0.0) -> MeshInstance3D:
 	var instance := MeshInstance3D.new()
 	var mesh := ImmediateMesh.new()
 	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -54,15 +349,29 @@ func sector(origin: Vector3, radius: float, from_angle: float, to_angle: float, 
 		var b: float = lerpf(from_angle, to_angle, (i + 1) / 16.0)
 		var pa := Vector3(cos(a), 0, sin(a))
 		var pb := Vector3(cos(b), 0, sin(b))
-		for v in [pa * inner, pa * radius, pb * radius, pa * inner, pb * radius, pb * inner]:
+		var outer_a := pa * radius + Vector3.UP * rim_height
+		var outer_b := pb * radius + Vector3.UP * rim_height
+		for v in [pa * inner, outer_a, outer_b, pa * inner, outer_b, pb * inner]:
 			mesh.surface_add_vertex(v)
 	mesh.surface_end()
 	instance.mesh = mesh
 	instance.material_override = tint(color)
 	instance.position = origin
 	add_child(instance)
-	trails.append({"node": instance, "life": lifetime, "total": lifetime, "color": color})
+	if lifetime > 0.0: trails.append({"node": instance, "life": lifetime, "total": lifetime, "color": color})
 	return instance
+
+func spinning_slash_wisps(origin: Vector3, reach: float, angle: float, swept: float) -> void:
+	var span := absf(swept)
+	if span < 0.12: return
+	var turn := signf(swept)
+	sector(origin + Vector3.UP * 0.19, reach * 0.94,
+		angle - turn * minf(span, 0.50), angle - turn * 0.08,
+		Color(.84, .98, 1.0, .34), reach * 0.90, .11, .12)
+	if span >= 0.24:
+		sector(origin - Vector3.UP * 0.38, reach * 0.88,
+			angle - turn * minf(span, 0.72), angle - turn * 0.20,
+			Color(.32, .73, .90, .27), reach * 0.82, .14, -.08)
 
 func legacy_sword_trail(origin: Vector3, reach: float, previous_angle: float, current_angle: float) -> void:
 	var swing_sign := signf(current_angle - previous_angle)
@@ -164,6 +473,33 @@ func lane(origin: Vector3, angle: float, length: float, width: float, color: Col
 	add_child(instance)
 	trails.append({"node": instance, "life": lifetime, "total": lifetime, "color": color})
 
+func ground_cracks(origin: Vector3, angle: float, arc: float, inner: float, outer: float, color: Color, lifetime: float) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	var count := 8 if arc >= TAU - .001 else 5
+	for ray in range(count):
+		var ray_angle := angle + arc * ((ray + .5) / count - .5)
+		var forward := Vector3(cos(ray_angle), 0, sin(ray_angle))
+		var side := Vector3(-forward.z, 0, forward.x)
+		var previous := forward * inner + side * sin(inner * 8.0 + ray) * .13 * minf(inner, 1.0)
+		for segment in range(1, 5):
+			var distance := lerpf(inner, outer, segment / 4.0)
+			var point := forward * distance + side * sin(distance * 8.0 + ray) * .13 * minf(distance, 1.0)
+			var width := side * .035
+			for vertex in [previous - width, previous + width, point + width, previous - width, point + width, point - width]:
+				mesh.surface_add_vertex(vertex)
+			previous = point
+	mesh.surface_end()
+	instance.mesh = mesh
+	instance.position = origin + Vector3.UP * .060
+	var material := tint(color)
+	material.no_depth_test = false
+	instance.material_override = material
+	add_child(instance)
+	if lifetime > 0.0: trails.append({"node": instance, "life": lifetime, "total": lifetime, "color": color})
+	return instance
+
 func burst(where: Vector3, color: Color, count: int = 10, sight_point: Vector3=Vector3.INF) -> void:
 	for i in range(count):
 		var piece := MeshInstance3D.new()
@@ -189,6 +525,12 @@ func number(where: Vector3, text: String, heavy: bool = false, sight_point: Vect
 	particles.append({"node": label, "velocity": Vector3(randf_range(-0.3, 0.3), 1.1, 0), "life": 0.65, "total": 0.65,"sight_point":sight_point})
 
 func tick(delta: float) -> void:
+	if _basic_slash != null: _basic_slash.tick(delta)
+	if _double_slash != null: _double_slash.tick(delta)
+	if _spin_slash != null: _spin_slash.tick(delta)
+	if _stormcaller_ring != null: _stormcaller_ring.tick(delta)
+	if mace_basic_flash != null: mace_basic_flash.tick(delta)
+	if mace_sweep_flash != null: mace_sweep_flash.tick(delta)
 	for clash in clashes.duplicate():
 		if not is_instance_valid(clash):clashes.erase(clash)
 		elif not clash.tick(delta):
@@ -199,6 +541,10 @@ func tick(delta: float) -> void:
 		elif not blast.tick(delta):
 			_remove_transient(blast)
 			fire_blasts.erase(blast)
+	for impact: Sprite3D in mace_impacts.duplicate():
+		if not impact.tick(delta):
+			_remove_transient(impact)
+			mace_impacts.erase(impact)
 	for entry in particles.duplicate():
 		entry.life -= delta
 		if entry.life <= 0.0:
@@ -206,7 +552,10 @@ func tick(delta: float) -> void:
 			particles.erase(entry)
 			continue
 		entry.node.position += entry.velocity * delta
-		if entry.node is MeshInstance3D:
+		if entry.has("ember_opacity"):
+			entry.velocity.y -= float(entry.gravity) * delta
+			entry.node.modulate.a = float(entry.ember_opacity) * smoothstep(0.0, float(entry.total) * .72, float(entry.life))
+		elif entry.node is MeshInstance3D:
 			entry.velocity.y -= float(entry.get("gravity", 6.0)) * delta
 			entry.node.scale = Vector3.ONE * (entry.life / entry.total)
 		else:
@@ -220,6 +569,10 @@ func tick(delta: float) -> void:
 		var color: Color = entry.color
 		color.a *= entry.life / entry.total
 		entry.node.material_override.albedo_color = color
+		if entry.has("radial_scale"):
+			var range_scale: Vector2 = entry.radial_scale
+			var scale_factor := lerpf(range_scale.x, range_scale.y, ease(1.0 - entry.life / entry.total, .55))
+			entry.node.scale = Vector3(scale_factor, 1.0, scale_factor)
 
 # Visuals only: contact and armor status remain owned by Game and Enemy.
 func armor_thrust(origin: Vector3, angle: float, reach: float) -> void:

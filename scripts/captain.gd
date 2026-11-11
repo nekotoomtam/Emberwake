@@ -45,7 +45,7 @@ func _receive_hit(amount: float,force: Vector3,duration: float,keep_red: bool) -
 func threatens(target: Vector3) -> bool:return not attack_data.is_empty() and Rules.contains(position,attack_angle,target,attack_data)
 func tick(delta: float,game,advance_status: bool=true) -> void:
  if delta<=0 or not is_finite(delta):return
- if advance_status:advance_armor_status(delta)
+ if advance_status:advance_combat_status(delta)
  view_right=game.camera.global_basis.x;view_right.y=0;view_right=view_right.normalized()
  clock+=delta;_hurt_time=maxf(0,_hurt_time-delta);_parry_flash=maxf(0,_parry_flash-delta)
  sprite.global_basis=game.camera.global_basis;sprite.global_position=global_position+game.camera.global_basis.y*(.864*BODY_SCALE)
@@ -101,7 +101,7 @@ func tick(delta: float,game,advance_status: bool=true) -> void:
   var across: float=view_right.dot(Vector3(cos(attack_angle),0,sin(attack_angle)))
   if absf(across)>.08:sprite.flip_h=across<0
  if not attack_data.is_empty() and attack_data.id=="throw" and (state=="windup" or (state=="attack" and elapsed<float(attack_data.release))):configure_throw_launch()
- velocity=move;velocity.y=-2;move_and_slide()
+ velocity=move*movement_speed_scale();velocity.y=-2;move_and_slide()
  var pose: Dictionary=Pose.sample(attack_data,state,telegraph_left,elapsed,cooldown,attack_angle)
  sprite.animation=pose.animation if state in ["windup","attack","recover","parried"] else ("hit" if _hurt_time>0 else "walk" if move.length()>.1 else "idle")
  sprite.frame=int(pose.frame) if state in ["windup","attack","recover","parried"] else int(clock*(8 if move.length()>.1 else 2))%sprite.sprite_frames.get_frame_count(sprite.animation)

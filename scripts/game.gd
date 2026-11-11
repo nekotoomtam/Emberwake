@@ -31,6 +31,15 @@ const ArsenalUI = preload("res://scripts/arsenal_ui.gd")
 const Motion = preload("res://scripts/weapon_motion.gd")
 const TwinCut = preload("res://scripts/twin_cut_motion.gd")
 const ArmorPierce = preload("res://scripts/armor_pierce_motion.gd")
+const SwordSkillMotion = preload("res://scripts/sword_skill_motion.gd")
+const MaceSkillMotion = preload("res://scripts/mace_skill_motion.gd")
+const MaceGroundEffects = preload("res://scripts/mace_ground_effects.gd")
+const MaceImpactVisual = preload("res://scripts/mace_impact_visual.gd")
+const MaceFireLobs = preload("res://scripts/mace_fire_lobs.gd")
+const MaceRiftVisual = preload("res://scripts/mace_rift_visual.gd")
+const MaceSweepVisual = preload("res://scripts/mace_sweep_visual.gd")
+const SkillTags = preload("res://scripts/skill_tags.gd")
+const SwordSkillUI = preload("res://scripts/sword_skill_ui.gd")
 const Hero = preload("res://scripts/hero_visual.gd")
 var use_cutout_avatar := false
 var expedition_starting_flasks := -1
@@ -131,6 +140,32 @@ var armor_lunge_travelled: float = 0.0
 var _armor_lunge = ShortLunge.new()
 var skill_active := false
 var skill_cut_index := -1
+var _sword_skill_motion = SwordSkillMotion.new()
+var _mace_skill_motion = MaceSkillMotion.new()
+var _mace_ground := MaceGroundEffects.new()
+var mace_fire_lobs: MaceFireLobs
+var mace_fire_buff_left := 0.0
+var _mace_fire_next_side := 0
+var _mace_charge_slot := -1
+var _mace_parried_attacker_id := 0
+var _mace_leap_offset := Vector3.ZERO
+var _mace_impact_flash: Sprite3D
+var _mace_fire_scoop_flash: Sprite3D
+const MACE_CHARGE_WALK_SPEED := 4.7 * .35
+var _sword_skill_lunge = ShortLunge.new()
+const STORM_STEP_DISTANCE := 0.80
+const STORM_STEP_DURATION := 0.14
+var _storm_step_direction := Vector3.ZERO
+var _storm_step_start := 0.0
+var _sword_stance_branch := -1
+var sword_skill_cooldowns: Dictionary = {}
+var sword_wave_buff_left := 0.0
+var _storm_blade_item := ""
+var _storm_blade_wave_damage := 1.0
+var _storm_blade_wave_speed := 1.0
+var _storm_blade_single_swing := false
+var sword_skills_open := false
+var sword_skill_ui
 var weapon_family: String = "sword"
 var staff_flight: Node3D
 var pistol_magazine = Magazine.new()
@@ -195,6 +230,7 @@ var _idle_time: float = 0.0
 var _dummy_idle: float = 0.0
 var _hit_stop: float = 0.0
 var _hit_targets: Dictionary = {}
+var _double_slash_first_hits: Dictionary = {}
 var _hurt: float = 0.0
 var _iframes: float = 0.0
 var _dodge_left: float = 0.0
@@ -230,12 +266,19 @@ func _ready() -> void:
 	brine_zones=preload("res://scripts/brine_zones.gd").new();add_child(brine_zones)
 	ground_fire=preload("res://scripts/ground_fire.gd").new();add_child(ground_fire)
 	ground_fire.damage_hit.connect(_ground_burn)
+	mace_fire_lobs = MaceFireLobs.new()
+	add_child(mace_fire_lobs)
+	mace_fire_lobs.detonated.connect(_mace_fire_impact)
+	mace_fire_lobs.ember_sample.connect(fx.mace_ember_trail)
+	mace_fire_lobs.impacted.connect(fx.mace_ember_impact)
 	staff_orbs=preload("res://scripts/staff_charge_visual.gd").new();add_child(staff_orbs)
 	staff_flight = StaffFlight.new()
 	add_child(staff_flight)
 	staff_flight.fire_patch.connect(ground_fire.spawn_patch)
 	staff_flight.rifle_hit.connect(_rifle_damage)
 	staff_flight.damage_hit.connect(_projectile_damage)
+	staff_flight.sword_wave_hit.connect(_sword_wave_damage)
+	staff_flight.vacuum_wake_segment.connect(fx.vacuum_wake_segment)
 	staff_flight.bolt_hit.connect(_crossbow_hit)
 	staff_flight.impact_element.connect(_projectile_impact)
 	staff_flight.area_impact.connect(_projectile_area_impact)
@@ -300,6 +343,10 @@ func _ready() -> void:
 	arsenal.game = self
 	arsenal.model = loadout
 	add_child(arsenal)
+	sword_skill_ui = SwordSkillUI.new()
+	sword_skill_ui.game = self
+	sword_skill_ui.model = loadout
+	add_child(sword_skill_ui)
 	dual_visual = DualHandVisual.new()
 	player.add_child(dual_visual)
 	if use_cutout_avatar:
@@ -322,6 +369,7 @@ func _bind_inputs() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		if _mace_charge_slot >= 0: _cancel_skill()
 		_cancel_revive()
 		_cancel_great_charge();staff_energy.cancel_actions();_cancel_rifle_action();_cancel_bow();_cancel_crossbow_load()
 		_held = false
@@ -329,9 +377,11 @@ func _notification(what: int) -> void:
 
 func _input(event: InputEvent) -> void:
 	if _room_fade != null: return
+	if sword_skills_open: return
 	if event is InputEventKey and not event.pressed:
 		var key: int = event.physical_keycode if event.physical_keycode else event.keycode
 		if key == KEY_E: _cancel_revive()
+		if key in [KEY_1, KEY_2, KEY_3]: release_mace_charge(key - KEY_1)
 	if event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_RIGHT and not event.pressed:
 		readiness.release(true);pistol_aim_state.reset();staff_energy.stop_load()
 	if event is InputEventMouseMotion:
@@ -348,6 +398,15 @@ func _input(event: InputEvent) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _room_fade != null:
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_K or event.keycode == KEY_K):
+		toggle_sword_skills()
+		get_viewport().set_input_as_handled()
+		return
+	if sword_skills_open:
+		if event is InputEventKey and event.pressed and (event.physical_keycode == KEY_ESCAPE or event.keycode == KEY_ESCAPE):
+			toggle_sword_skills()
 		get_viewport().set_input_as_handled()
 		return
 	if dungeon_peek.visible:
@@ -379,6 +438,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 	if inventory_open or stats_open or body_lab_open: return
+	if skill_active and active_skill_id == "square_off" and motion.stage == 0 and event is InputEventMouseButton and event.pressed:
+		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+			_choose_square_followup(1 if event.button_index == MOUSE_BUTTON_LEFT else 2)
+			get_viewport().set_input_as_handled()
+			return
 	if is_instance_valid(revive_target) and event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 		get_viewport().set_input_as_handled()
 		return
@@ -401,6 +465,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key: int = event.physical_keycode if event.physical_keycode else event.keycode
 		match key:
+			KEY_1, KEY_2, KEY_3: request_skill_slot(key - KEY_1, true)
 			KEY_SPACE: request_dodge()
 			KEY_ESCAPE: toggle_pause()
 			KEY_R: request_reload()
@@ -474,7 +539,9 @@ func start_coast() -> void:
 	player.position=arena.spawn_point;_camera_focus=player.position;camera.position=_camera_focus+CAMERA_OFFSET;camera.look_at(_camera_focus)
 	coast.populate(self);ui.show_mode(mode);_visual_tick(0)
 func finish_coast() -> void:
-	_cancel_body_actions();clear_hostile_projectiles();fx.clear_transients();staff_flight.clear();ground_fire.clear();casing_fx.clear();reset_gun_magazines();_held=false;mode="victory";audio.play("victory");ui.show_mode(mode)
+	mace_fire_lobs.clear()
+	mace_fire_buff_left = 0.0
+	_cancel_body_actions();clear_hostile_projectiles();fx.clear_transients();staff_flight.clear();ground_fire.clear();_mace_ground.clear();casing_fx.clear();reset_gun_magazines();_held=false;mode="victory";audio.play("victory");ui.show_mode(mode)
 func start_dungeon(seed_value: int = -1) -> void:
 	start_run(true)
 	_apply_expedition_attributes()
@@ -563,6 +630,9 @@ func start_run(practice: bool = false,harbor: bool=false) -> void:
 	_health_before_frenzy = 0.0
 	anatomy.bind_max_hp(stats.value("max_health"));anatomy.reset();flasks.reset();body_lab_open=false;_crawl_still=.25;_body_key=anatomy.capability_key()
 	readiness.reset();rewards.reset();energy.reset()
+	sword_skill_cooldowns.clear()
+	sword_wave_buff_left = 0.0
+	sword_skills_open = false
 	if is_instance_valid(vision):vision.reset_cues()
 	drill_kind=""
 	if inventory_open: toggle_inventory()
@@ -627,6 +697,9 @@ func clear_actors() -> void:
 	if is_instance_valid(fx): fx.clear_transients()
 	if is_instance_valid(staff_flight): staff_flight.clear()
 	if is_instance_valid(ground_fire):ground_fire.clear()
+	_mace_ground.clear()
+	if is_instance_valid(mace_fire_lobs): mace_fire_lobs.clear()
+	mace_fire_buff_left = 0.0
 	if is_instance_valid(casing_fx): casing_fx.clear()
 	for enemy in enemies:
 		if is_instance_valid(enemy):
@@ -653,6 +726,7 @@ func restart() -> void:
 	else:start_run(_practice)
 
 func return_menu() -> void:
+	sword_wave_buff_left = 0.0
 	flasks.cancel_effects()
 	readiness.release();pistol_aim_state.reset()
 	_cancel_skill()
@@ -678,6 +752,7 @@ func toggle_pause() -> void:
 	readiness.release();pistol_aim_state.reset()
 	_held = false
 	if mode in ["combat", "practice"]:
+		_mace_ground.clear_landing()
 		_previous_mode = mode
 		mode = "paused"
 	elif mode == "paused":
@@ -688,8 +763,8 @@ func toggle_pause() -> void:
 	if is_instance_valid(rifle_scope):rifle_scope.update_view(self)
 	pistol_reticle.update_view(self)
 
-func _refresh_aim() -> void:
-	if motion.busy and not motion.is_great_charging(): return
+func _refresh_aim(allow_locked: bool = false) -> void:
+	if motion.busy and not motion.is_great_charging() and not allow_locked: return
 	if test_aim.length_squared() > 0.001:
 		aim = Vector3(test_aim.x, 0, test_aim.z).normalized()
 	else:
@@ -701,7 +776,7 @@ func _refresh_aim() -> void:
 			direction.y = 0
 			if direction.length_squared() > 0.1: aim = direction.normalized()
 	if motion.is_great_charging():motion.retarget_charge(atan2(aim.z,aim.x))
-	else:motion.rebase_idle_aim(atan2(aim.z, aim.x))
+	elif not motion.busy:motion.rebase_idle_aim(atan2(aim.z, aim.x))
 
 func _relax_idle_pose() -> void:
 	if motion.busy: return
@@ -730,7 +805,11 @@ func request_attack() -> bool:
 			if item_magazines.has(id) and not item_magazines[id].can_fire():
 				_select_loadout_item(id);request_reload();return false
 	var counter: bool=rewards.counter_left>0 and primary_family() in ReadyRules.MELEE
-	if counter:_next_combo=2
+	var fire_mace := primary_family() == "mace" and mace_fire_buff_left > 0.0
+	if fire_mace:
+		_next_combo = 0
+		if ids.size() > 1: ids.resize(1)
+	elif counter:_next_combo=2
 	elif rewards.combo_left<=0:_next_combo=0
 	_pair_aimed=right_action()=="aim"
 	var total_cost:=.0
@@ -759,23 +838,34 @@ func _start_weapon_attack(index: int,counter: bool=false) -> bool:
 	_relax_idle_pose()
 	_refresh_aim()
 	var attack_stage := index
+	var fire_lift: bool = weapon_family == "mace" and primary_family() == "mace" and mace_fire_buff_left > 0.0 and not pair_strikes.active
+	if fire_lift: attack_stage = _mace_fire_next_side
 	if weapon_family in ["staff", "pistol", "rifle"]: attack_stage = 0
 	var plan: Dictionary = {}
 	var attack_aim := aim
-	if weapon_family in ["sword", "greatsword", "mace"]:
+	if weapon_family in ["sword", "greatsword", "mace"] and not fire_lift:
 		plan = _melee_approach.choose(weapon_family, attack_stage, player.global_position, aim, motion.definition(attack_stage), enemies, player.get_world_3d())
 		if plan.assisted: attack_aim = plan.direction
 	if counter and weapon_family=="greatsword":motion.great_charge.prime_finisher(3)
 	if weapon_family=="rifle":
 		motion.configure_rifle(_pair_aimed);active_magazine().configure_shot(_pair_aimed)
 	_pistol_shot_bonus=pistol_aim_state.speed_bonus() if weapon_family=="pistol" and _pair_aimed and readiness.held else 0.0
-	if not motion.start(attack_stage, atan2(attack_aim.z, attack_aim.x)): return false
+	var attack_angle := atan2(attack_aim.z, attack_aim.x)
+	if fire_lift:
+		if not motion.start_mace_fire_lift(attack_stage, attack_angle): return false
+		_mace_fire_next_side = 1 - _mace_fire_next_side
+	else:
+		if not motion.start(attack_stage, attack_angle): return false
+	_storm_blade_single_swing = _storm_blade_has_current_sword()
 	_spend_stamina(energy_cost)
 	_shot_aimed=_pair_aimed
 	_shot_spread=gun_spread(weapon_family,_shot_aimed)
 	aim = attack_aim
 	melee_approach_plan = plan
-	_attack_step.begin(weapon_family, motion.stage, motion.aim_angle, plan.get("distance", -1.0), plan.get("distance_limit", 0.85), plan.get("assisted", false))
+	if fire_lift:
+		_reset_attack_step()
+	else:
+		_attack_step.begin(weapon_family, motion.stage, motion.aim_angle, plan.get("distance", -1.0), plan.get("distance_limit", 0.85), plan.get("assisted", false))
 	attack_step_travelled = 0.0
 	if weapon_family == "rifle":
 		_rifle_recoil.reset()
@@ -791,35 +881,47 @@ func _start_weapon_attack(index: int,counter: bool=false) -> bool:
 	return true
 
 func request_skill() -> bool:
-	return false
+	return request_skill_slot(0)
 
 func request_armor_skill() -> bool:
 	return false
 
 func _begin_skill(id: String) -> bool:
-	return false
-
-func _disabled_begin_skill(id: String) -> bool:
+	var mace_skill := MaceSkillMotion.SKILLS.has(id)
+	if mace_skill:
+		if not mace_skills_available(): return false
+	elif not SwordSkillMotion.SKILLS.has(id) or not sword_skills_available(): return false
+	if encounter_mode == "wreck_shore" and not arena.intro_done(): return false
+	if sword_skills_open or _arrival_locked or dungeon_peek.visible or _room_fade != null or is_instance_valid(revive_target): return false
+	if float(sword_skill_cooldowns.get(id, 0.0)) > 0.0: return false
+	if not body_action_ready() or not active_weapon_possible(): return false
 	if right_action()=="guard" or readiness.broken_left>0:return false
 	if pair_strikes.active: return false
 	if inventory_open or stats_open or body_lab_open: return false
-	if loadout_mode and not motion.busy and not skill_active:
-		var main: String = loadout.primary()
-		if main == "" or loadout.items[main].family != "sword": return false
-		_select_loadout_item(main)
-	if mode not in ["practice", "combat"] or anatomy.dead() or weapon_family != "sword" or skill_active or motion.busy or _dodge_left > 0 or guns_reloading(): return false
+	if mode not in ["practice", "combat"] or anatomy.dead() or skill_active or motion.busy or _dodge_left > 0 or guns_reloading(): return false
+	var skill: Dictionary = MaceSkillMotion.SKILLS[id] if mace_skill else SwordSkillMotion.SKILLS[id]
+	var cost: float = skill.cost if mace_skill else SwordSkillMotion.mana_cost(id, stats.attributes)
+	if mana < cost: return false
+	if loadout_mode and not _select_loadout_item(_body_default_item()): return false
 	_refresh_aim()
-	var selected = _armor_motion if id == "armor_pierce" else _skill_motion
-	selected.reset()
-	if not selected.start(0, atan2(aim.z, aim.x)): return false
-	# Keep the ordinary motion and earned combo intact across the skill.
-	motion = selected
+	var skill_motion = _mace_skill_motion if mace_skill else _sword_skill_motion
+	if mace_skill:
+		if not _mace_skill_motion.configure(id, motion.sample()): return false
+	else:
+		if not _sword_skill_motion.configure(id, stats.attributes): return false
+		_sword_skill_motion.seed_pose(motion.sample())
+	if not skill_motion.start(0, atan2(aim.z, aim.x)): return false
+	mana -= cost
+	sword_skill_cooldowns[id] = float(skill.cooldown)
+	motion = skill_motion
 	active_skill_id = id
 	_skill_generation += 1
-	_armor_lunge.reset()
-	if id == "armor_pierce": armor_lunge_travelled = 0.0
+	_sword_skill_lunge.reset()
+	_storm_step_direction = Vector3.ZERO
+	_sword_stance_branch = -1
 	skill_active = true
 	skill_cut_index = 0
+	readiness.release()
 	_held = false
 	_idle_time = 0
 	_dummy_idle = 0
@@ -827,9 +929,77 @@ func _disabled_begin_skill(id: String) -> bool:
 	_reset_attack_step()
 	_trail_clock = 0
 	audio.play("equip")
+	if id == "mace_armor_counter":
+		var angle: float = skill_motion.aim_angle
+		fx.sector(player.position + Vector3.UP * .045, .95, angle - PI / 3.0, angle + PI / 3.0, Color("#9edfdc"), .88, MaceSkillMotion.ARMOR_COUNTER_WINDOW)
 	return true
 
+func request_skill_slot(index: int, hold_charge: bool = false) -> bool:
+	var slots: Array = loadout.mace_skill_slots if primary_family() == "mace" else loadout.skill_slots
+	if index < 0 or index >= slots.size(): return false
+	if not _begin_skill(str(slots[index])): return false
+	if hold_charge and MaceSkillMotion.SKILLS.get(slots[index], {}).get("chargeable", false):
+		_mace_skill_motion.charging = true
+		_mace_charge_slot = index
+	return true
+
+func release_mace_charge(index: int) -> void:
+	if index != _mace_charge_slot or not _mace_skill_motion.charging: return
+	_mace_charge_slot = -1
+	if mode not in ["practice", "combat"] or inventory_open or stats_open or body_lab_open:
+		_cancel_skill()
+		return
+	if active_skill_id == "mace_earth_wave":
+		_refresh_aim(true)
+		_mace_leap_offset = _mace_leap_landing(_mace_skill_motion.charge_grade()) - player.position
+		_mace_skill_motion.steer_charge(_mace_leap_angle(_mace_leap_offset), 1.0)
+	_mace_ground.clear_landing()
+	_mace_skill_motion.release_charge()
+	sword_skill_cooldowns[active_skill_id] = float(MaceSkillMotion.SKILLS[active_skill_id].cooldown)
+
+func mace_charge_grade(index: int) -> int:
+	return _mace_skill_motion.charge_grade() if index == _mace_charge_slot else 0
+
+func toggle_sword_skills() -> void:
+	if sword_skills_open:
+		sword_skills_open = false
+		return
+	if _arrival_locked or dungeon_peek.visible or body_lab_open or stats_open or _room_fade != null: return
+	if mode not in ["menu", "practice", "combat", "paused"] or motion.busy or _dodge_left > 0 or is_instance_valid(revive_target): return
+	if inventory_open: toggle_inventory()
+	_cancel_bow()
+	_cancel_crossbow_load()
+	_cancel_rifle_action()
+	staff_energy.cancel_actions()
+	readiness.release()
+	_held = false
+	sword_skills_open = true
+	loadout.message = "เลือกท่าที่ต้องการ แล้วกดใส่ช่อง 1 / 2 / 3"
+	if is_instance_valid(sword_skill_ui): sword_skill_ui.refresh()
+
+func _choose_square_followup(index: int) -> void:
+	if not skill_active or active_skill_id != "square_off" or motion.stage != 0: return
+	_sword_stance_branch = index
+	if motion.elapsed >= float(motion.definition(0).windup):
+		_start_skill_stage(index)
+
+func _start_skill_stage(index: int) -> void:
+	if active_skill_id == "double_slash" and index == 1:
+		_double_slash_first_hits = _hit_targets.duplicate()
+	motion.busy = false
+	if not motion.start(index, motion.aim_angle):
+		_cancel_skill()
+		return
+	skill_cut_index = index
+	_sword_stance_branch = -1
+	_sword_skill_lunge.reset()
+	_storm_step_direction = Vector3.ZERO
+	_hit_targets.clear()
+	_trail_clock = 0.0
+	if motion == _sword_skill_motion: audio.play("equip")
+
 func _cancel_skill() -> void:
+	_double_slash_first_hits.clear()
 	staff_energy.cancel_actions()
 	pair_strikes.cancel()
 	_skill_generation += 1
@@ -838,18 +1008,24 @@ func _cancel_skill() -> void:
 	_skill_motion.reset()
 	_armor_motion.reset()
 	_armor_lunge.reset()
+	_sword_skill_motion.reset()
+	_mace_skill_motion.reset()
+	_mace_charge_slot = -1
+	_mace_parried_attacker_id = 0
+	_mace_leap_offset = Vector3.ZERO
+	_mace_impact_flash = null
+	_mace_ground.clear_landing()
+	_sword_skill_lunge.reset()
+	_storm_step_direction = Vector3.ZERO
+	_sword_stance_branch = -1
 	active_skill_id = ""
 	skill_active = false
 	skill_cut_index = -1
 
 func _finish_skill_cut() -> void:
 	if not skill_active or motion.busy: return
-	if skill_cut_index == 0:
-		skill_cut_index = 1
-		motion.start(1, motion.aim_angle)
-		_hit_targets.clear()
-		_trail_clock = 0
-		audio.play("equip")
+	if motion == _sword_skill_motion and active_skill_id != "square_off" and skill_cut_index + 1 < _sword_skill_motion.stage_count():
+		_start_skill_stage(skill_cut_index + 1)
 	else:
 		_cancel_skill()
 		_idle_time = 0
@@ -955,7 +1131,7 @@ func _process(_delta: float) -> void:
 		_present_frame(elapsed)
 
 func tick(delta: float) -> void:
-	if inventory_open or stats_open or body_lab_open or dungeon_peek.visible or _room_fade != null: return
+	if inventory_open or stats_open or body_lab_open or sword_skills_open or dungeon_peek.visible or _room_fade != null: return
 	if not is_finite(delta) or delta <= 0: return
 	# Preserve each cut's active interval and hit identities when a slow frame
 	# crosses the automatic cut boundary. Other attacks retain their old tick.
@@ -964,16 +1140,26 @@ func tick(delta: float) -> void:
 		var part := remaining
 		# Residual brine retains its pulse/expiry clock after its caster is gone.
 		if not brine_zones.zones.is_empty():part=minf(part,1.0/120)
+		if mode in ["practice", "combat"] and not _mace_ground.echoes.is_empty():
+			part = minf(part, maxf(.00000001, _mace_ground.echoes[0].remaining))
 		if mode in ["practice","combat"] and _hit_stop<=0:
+			if sword_wave_buff_left > 0.0: part = minf(part, sword_wave_buff_left)
 			if _dodge_left>.0000001:part=minf(part,_dodge_left)
 			if primary_family()=="rifle" and active_magazine().bolt_active:
 				part=minf(part,maxf(.00000001,(active_magazine().bolt_duration-active_magazine().bolt_elapsed)/attack_rate()))
 			if motion.busy and not motion.is_great_charging() and not skill_active and not pair_strikes.active:
 				var timing: Dictionary=motion.definition(motion.stage)
 				part=minf(part,maxf(.00000001,(float(timing.windup+timing.active+timing.recovery)-motion.elapsed)/attack_rate()))
+				if timing.get("kind") == "fire_lift" or (SkillTags.has_tag(timing, SkillTags.GROUND_IMPACT) and not _mace_ground.rift.is_empty()):
+					var release_time: float = timing.windup + timing.active * timing.impact_progress
+					if release_time > motion.elapsed + .00000001: part = minf(part, (release_time - motion.elapsed) / attack_rate())
 				if weapon_family=="rifle":
 					for boundary in [timing.windup,timing.windup+timing.active]:
 						if float(boundary)>motion.elapsed+.00000001:part=minf(part,maxf(.00000001,(float(boundary)-motion.elapsed)/attack_rate()))
+			if motion.busy and _storm_blade_can_release():
+				var active_start: float = float(motion.definition(motion.stage).windup)
+				if active_start > motion.elapsed + .00000001:
+					part = minf(part, maxf(.00000001, (active_start - motion.elapsed) / attack_rate()))
 			for magazine in [pistol_magazine,rifle_magazine]+item_magazines.values():
 				if magazine.reloading:
 					var boundary: float=magazine.next_boundary() if magazine.has_method("next_boundary") else magazine.reload_duration-magazine.elapsed
@@ -1010,6 +1196,7 @@ func tick(delta: float) -> void:
 			else:
 				var definition: Dictionary = motion.definition(motion.stage)
 				var until_end: float = definition.windup + definition.active + definition.recovery - motion.elapsed
+				var rate := attack_rate()
 				if active_skill_id == "armor_pierce":
 					# Split at real contacts, so the thrust moves and resolves at its
 					# visible contact pose even when one frame spans the whole cast.
@@ -1017,7 +1204,16 @@ func tick(delta: float) -> void:
 					if skill_cut_index == 1: boundaries.append(definition.windup + definition.active * definition.impact_progress)
 					for boundary in boundaries:
 						if boundary > motion.elapsed + .00000001: until_end = minf(until_end, boundary - motion.elapsed)
-				part = minf(part, maxf(until_end, .00000001))
+				if motion == _sword_skill_motion:
+					for boundary in [definition.windup, definition.windup + definition.active * 0.5, definition.windup + definition.active]:
+						if float(boundary) > motion.elapsed + .00000001: until_end = minf(until_end, float(boundary) - motion.elapsed)
+				elif motion == _mace_skill_motion:
+					var contact_time: float = definition.windup + definition.active * definition.impact_progress
+					if contact_time > motion.elapsed + .00000001: until_end = minf(until_end, contact_time - motion.elapsed)
+					if _mace_armor_parry_windup():
+						until_end = MaceSkillMotion.ARMOR_COUNTER_WINDOW - motion.elapsed
+						rate = 1.0
+				part = minf(part, maxf(until_end / rate, .00000001))
 		if pair_strikes.active and mode in ["practice", "combat"]:
 			if _hit_stop > 0:
 				part = minf(part,_hit_stop)
@@ -1044,11 +1240,24 @@ func _tick_frame(delta: float) -> void:
 			_visual_tick(delta)
 		return
 	run_time += delta
+	_mace_ground.advance_rift(delta)
+	mana = minf(stats.value("max_mana"), mana + stats.value("mana_regen") * delta)
+	var expiring_storm_rate := 0.0
+	if motion.busy and sword_wave_buff_left <= delta and _storm_blade_has_current_sword():
+		expiring_storm_rate = attack_rate()
+	sword_wave_buff_left = maxf(0.0, sword_wave_buff_left - delta)
+	mace_fire_buff_left = maxf(0.0, mace_fire_buff_left - delta)
+	for id in sword_skill_cooldowns:
+		sword_skill_cooldowns[id] = maxf(0.0, float(sword_skill_cooldowns[id]) - delta)
 	if _coast_mode:arena.tick(delta)
 	if encounter_mode=="wreck_shore" and not arena.intro_done():
 		arena.apply_intro(self);_visual_tick(delta);return
 	fx.tick(delta)
 	casing_fx.tick(delta, camera)
+	for rift_echo in _mace_ground.advance_echoes(delta):
+		var generation := _mace_ground.generation
+		_resolve_mace_rift_echo(rift_echo)
+		if generation != _mace_ground.generation or mode not in ["practice", "combat"]: return
 	if _hit_stop > 0:
 		_hit_stop = maxf(0, _hit_stop - delta)
 		_visual_tick(delta)
@@ -1056,8 +1265,8 @@ func _tick_frame(delta: float) -> void:
 	# Expire statuses at this simulation instant before any contact resolves.
 	# Hitstop and paused modes reach neither this pass nor Enemy.tick.
 	for enemy in enemies:
-		if is_instance_valid(enemy) and enemy.has_method("advance_armor_status"):
-			enemy.advance_armor_status(delta)
+		if is_instance_valid(enemy) and enemy.has_method("advance_combat_status"):
+			enemy.advance_combat_status(delta)
 			if not enemy.dead and enemy.crossbow_wound_ticks > 0:
 				enemy.crossbow_wound_time += delta
 				while enemy.crossbow_wound_time >= 1.0 and enemy.crossbow_wound_ticks > 0 and not enemy.dead:
@@ -1072,7 +1281,7 @@ func _tick_frame(delta: float) -> void:
 	readiness.tick(delta)
 	_dodge_step_protected=rewards.invulnerable()
 	rewards.advance(delta)
-	if not motion.busy and not pair_strikes.active and rewards.combo_left<=0:
+	if not skill_active and not motion.busy and not pair_strikes.active and rewards.combo_left<=0:
 		_next_combo=0;motion.great_charge.clear_finisher()
 	_sync_staff_key()
 	if bow_charge >= 0.0:
@@ -1084,6 +1293,7 @@ func _tick_frame(delta: float) -> void:
 	if gained>0:audio.play("staff_charge%d"%staff_energy.units)
 	elif staff_energy.casting and staff_energy.level()>before_tier:audio.play("staff_charge%d"%staff_energy.level())
 	ground_fire.tick(delta,enemies,player.get_world_3d())
+	mace_fire_lobs.tick(delta, camera, player.get_world_3d())
 	var energy_busy: bool=_crossbow_loading != null or bow_charge >= 0.0 or _bow_recovery > 0.0 or motion.busy or pair_strikes.active or _dodge_left>0 or staff_was_busy or staff_energy.loading or staff_energy.casting or (primary_family()=="rifle" and active_magazine().bolt_active)
 	_hurt = maxf(0, _hurt - delta)
 	_iframes = maxf(0, _iframes - delta)
@@ -1109,7 +1319,9 @@ func _tick_frame(delta: float) -> void:
 			if magazine==current_mag and primary_family()=="rifle":rifle_ready_this_frame=true
 			audio.play(reload_visual.family+"_reload_done" if reload_visual.active else "reload_done")
 			reload_visual.cancel()
-	_refresh_aim()
+	var steering_mace: bool = skill_active and motion == _mace_skill_motion and _mace_skill_motion.can_steer_followup()
+	var charging_mace := _mace_charge_slot >= 0
+	_refresh_aim(steering_mace or charging_mace)
 	var movement := _movement()
 	if not motion.busy:
 		_idle_time += delta
@@ -1119,12 +1331,47 @@ func _tick_frame(delta: float) -> void:
 			_rifle_pending_fire=false;request_attack()
 		elif _held and not rifle_ready_this_frame: request_attack()
 	var prior_sample: Dictionary = _hand_pose(motion.sample())
-	var step: Dictionary = motion.advance(delta*attack_rate())
+	var motion_elapsed_before: float = motion.elapsed
+	var motion_rate := expiring_storm_rate if expiring_storm_rate > 0.0 else attack_rate()
+	if _mace_armor_parry_windup(): motion_rate = 1.0
+	if steering_mace:
+		_mace_skill_motion.steer_followup(atan2(aim.z, aim.x), delta * motion_rate)
+	if charging_mace:
+		_mace_skill_motion.steer_charge(atan2(aim.z, aim.x), delta)
+	var step: Dictionary = motion.advance(delta if charging_mace else delta * motion_rate)
+	if skill_active and active_skill_id == "square_off" and motion.stage == 0 and _sword_stance_branch >= 0 and motion.elapsed >= float(motion.definition(0).windup):
+		_start_skill_stage(_sword_stance_branch)
+		step = {"entered_active": false, "active": false, "damage_ready": false, "finished": false, "previous_angle": motion.aim_angle, "current_angle": motion.aim_angle}
 	if _is_left_hand():
 		for field in ["previous_angle","current_angle"]:step[field]=2*motion.aim_angle-float(step[field])
 		for field in ["trail_from","trail_to","release_pose","contact_pose"]:
 			if not step.get(field,{}).is_empty():step[field]=_hand_pose(step[field])
 	var sample: Dictionary = _hand_pose(motion.sample())
+	var sword_wave_release: Dictionary = {}
+	if step.entered_active and _storm_blade_can_release():
+		sword_wave_release = {"damage": (12.0 + motion.stage * 2.0) * _storm_blade_wave_damage,
+			"projectile_speed": 12.0 * _storm_blade_wave_speed, "projectile_range": 7.0, "projectile_radius": .7}
+	if skill_active and motion == _sword_skill_motion:
+		var skill_definition: Dictionary = motion.definition(motion.stage)
+		var lunge_limit: float = float(skill_definition.get("lunge_distance", 0.0))
+		var lunge_window: bool = not skill_definition.get("windup_lunge", false) or motion_elapsed_before < float(skill_definition.windup) - 0.00000001
+		if lunge_limit > 0.0 and lunge_window and anatomy.leg_count() > 0:
+			var skill_direction := Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle))
+			_sword_skill_lunge.advance(player, skill_direction, float(sample.get("lunge_offset", 0.0)), enemies, lunge_limit)
+		if step.get("projectile_ready", false):
+			sword_wave_release = skill_definition.duplicate()
+			sword_wave_release.projectile_visual = "vacuum_wave" if active_skill_id == "vacuum_slice" else "sword_wave"
+		if step.entered_active and active_skill_id == "storm_blade":
+			sword_wave_buff_left = float(skill_definition.buff_duration)
+			_storm_blade_item = active_item if loadout_mode else ""
+			_storm_blade_wave_damage = float(skill_definition.wave_damage_multiplier)
+			_storm_blade_wave_speed = float(skill_definition.wave_speed_multiplier)
+			fx.ring(player.position, 1.0, Color(.3, .9, 1.0, .9), .35)
+		if step.entered_active and skill_definition.kind == "thrust":
+			fx.thrust_wind(player.position, motion.aim_angle, skill_definition.reach)
+		if step.active and skill_definition.projectile and _trail_clock <= 0:
+			fx.sword_edge(_hand_origin(), step.trail_from, step.trail_to, Color(.7, .95, 1.0, .8), .10)
+			_trail_clock = .016
 	if weapon_family=="rifle" and (motion.busy or step.finished) and active_magazine().needs_bolt:
 		var rifle_spec: Dictionary=motion.definition(0)
 		active_magazine().sync_bolt(maxf(0,motion.elapsed-rifle_spec.windup-rifle_spec.active));_rifle_events(active_magazine())
@@ -1141,7 +1388,18 @@ func _tick_frame(delta: float) -> void:
 			rifle_release = step.release_pose
 		else:
 			_release_ranged(step.release_pose)
-	var mace_dash: bool = weapon_family == "mace" and motion.stage == 1
+	var mace_skill: bool = skill_active and motion == _mace_skill_motion
+	if mace_skill:
+		_advance_mace_skill(step, sample)
+	var fire_lift: bool = weapon_family == "mace" and not mace_skill and motion.definition(motion.stage).get("kind") == "fire_lift"
+	var ordinary_mace: bool = weapon_family == "mace" and not mace_skill and not fire_lift
+	if fire_lift and step.has("ground_pose"):
+		var scrape := _mace_head_at(step.ground_pose) + Vector3.UP * .025
+		fx.mace_fire_scoop(scrape, _mace_scoop_mirrored(step.ground_pose), true)
+		fx.mace_ember_spray(scrape, Vector3(cos(motion.aim_angle), 0.0, sin(motion.aim_angle)), .65, true)
+	if fire_lift and step.damage_ready:
+		_launch_mace_fire_lob(step.contact_pose)
+	var mace_dash: bool = ordinary_mace and motion.stage == 1
 	if mace_dash:
 		var desired: float = sample.get("lunge_offset", 0.0)
 		if step.get("damage_ready", false) and not step.get("contact_pose", {}).is_empty():
@@ -1149,9 +1407,9 @@ func _tick_frame(delta: float) -> void:
 		_apply_mace_travel(desired)
 	if step.entered_active and armor_stab:
 		fx.thrust_wind(player.position, motion.aim_angle, motion.definition(motion.stage).reach)
-	if step.entered_active and weapon_family not in ["staff", "pistol", "rifle"]:
+	if step.entered_active and not mace_skill and weapon_family not in ["staff", "pistol", "rifle"]:
 		audio.play("sword" if weapon_family == "sword" else (("guard" if mace_dash else "heavy") if weapon_family == "mace" else ("heavy" if motion.stage == 2 else "sword")))
-	if step.active and weapon_family not in ["staff", "pistol", "rifle"]:
+	if step.active and not mace_skill and weapon_family not in ["staff", "pistol", "rifle"] and not (skill_active and bool(motion.definition(motion.stage).get("projectile", false))):
 		var definition: Dictionary = motion.definition(motion.stage)
 		var blade_direction := Vector3(cos(step.current_angle), 0, sin(step.current_angle))
 		var slam: bool = definition.get("kind", "sweep") == "slam"
@@ -1159,17 +1417,27 @@ func _tick_frame(delta: float) -> void:
 		if _trail_clock <= 0 and armor_stab:
 			fx.armor_thrust(player.position, motion.aim_angle, definition.reach)
 			_trail_clock = .025
+		elif _trail_clock <= 0 and skill_active and definition.kind == "thrust":
+			fx.armor_thrust(player.position, motion.aim_angle, definition.reach)
+			_trail_clock = .025
+		elif _trail_clock <= 0 and skill_active and definition.get("spin", false):
+			if active_skill_id != "stormcaller":
+				var spin_origin := _hand_origin() + Vector3.UP * .72
+				fx.sector(spin_origin, definition.reach, step.previous_angle, step.current_angle, Color(.65, .92, 1.0, .5), definition.reach * .72, .16)
+				if active_skill_id == "spinning_slash":
+					fx.spinning_slash_wisps(spin_origin, definition.reach, step.current_angle, step.trail_to.progress * definition.arc * definition.direction)
+			_trail_clock = .016
 		elif _trail_clock <= 0 and active_skill_id in ["twin_cut", "armor_pierce"]:
 			fx.legacy_sword_trail(_hand_origin(), definition.reach, step.previous_angle, step.current_angle)
 			_trail_clock = .02
 		elif _trail_clock <= 0 and weapon_family == "sword":
 			var edge_from: Dictionary = step.get("trail_from", {})
 			var edge_to: Dictionary = step.get("trail_to", {})
-			if not edge_from.is_empty() and not edge_to.is_empty():
+			if skill_active and active_skill_id != "double_slash" and not edge_from.is_empty() and not edge_to.is_empty():
 				fx.sword_edge(_hand_origin(), edge_from, edge_to, Color(1.0, 0.93, 0.74, 0.72), 0.07 if motion.stage == 2 else 0.055)
 				fx.sword_swing_wind(_hand_origin(), edge_from, edge_to, motion.stage == 2)
 			_trail_clock = 0.016
-		elif _trail_clock <= 0 and vertical:
+		elif _trail_clock <= 0 and vertical and not ordinary_mace:
 			fx.blade_ribbon(_hand_origin(), motion.aim_angle, sample.radius, sample.blade_length, prior_sample.get("pitch", 0.0), sample.pitch, prior_sample.get("grip_height", 0.8), sample.grip_height, Color(1, 0.79, 0.42, 0.65), 0.11)
 			_trail_clock = 0.016
 		elif _trail_clock <= 0:
@@ -1180,33 +1448,49 @@ func _tick_frame(delta: float) -> void:
 				fx.sector(_hand_origin() + Vector3(0, 0.69, 0), definition.reach, step.current_angle - swing_sign * 0.4, step.current_angle, Color(1, 1, 0.85, 0.9), definition.reach - 0.07, 0.09)
 			_trail_clock = 0.02
 		if step.get("damage_ready", step.active):
+			var ground_impact := Vector3.INF
+			var slam_hits: Dictionary = {}
+			var impact_generation := _skill_generation
+			var armor_stacks: int = definition.get("armor_stacks", 0)
 			if encounter_mode == "dungeon" and is_instance_valid(arena.hazards):
 				var root_ambush = arena.hazards.root_ambush
 				if root_ambush != null and root_ambush.try_melee(_hand_origin(), motion, step.previous_angle, step.current_angle):
 					audio.play("guard")
 			if slam:
 				var tip: Vector3 = _hand_origin() + Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle)) * definition.reach
-				fx.lane(_hand_origin(), motion.aim_angle, definition.reach, definition.width, Color(1, 0.78, 0.38, 0.24), 0.14)
-				fx.burst(tip + Vector3(0, 0.07, 0), Color("#ffd18b"), 12)
+				ground_impact = tip
+				if ordinary_mace:
+					var head := _mace_head_at(step.contact_pose)
+					ground_impact = Vector3(head.x, player.position.y, head.z)
+					_mace_impact_flash = fx.mace_impact_sprite(head, .88, MaceImpactVisual.Style.BASIC)
+				else:
+					fx.lane(_hand_origin(), motion.aim_angle, definition.reach, definition.width, Color(1, 0.78, 0.38, 0.24), 0.14)
+					fx.burst(tip + Vector3(0, 0.07, 0), Color("#ffd18b"), 12)
 				audio.play("slam")
 				_shake = maxf(_shake, 0.025)
 			for enemy in enemies:
 				if not is_instance_valid(enemy) or enemy.dead or _hit_targets.has(enemy.get_instance_id()): continue
 				if active_skill_id == "armor_pierce" and not _armor_line_clear(enemy): continue
+				if skill_active and motion == _sword_skill_motion and not _armor_line_clear(enemy): continue
 				var region: String=_melee_contact_region(enemy,step)
 				if region!="":
 					_hit_targets[enemy.get_instance_id()] = true
 					var force: float = definition.get("knockback", 7.0 if motion.stage == 2 else 3.5)
-					if weapon_family == "sword": force = 4.2 if motion.stage == 2 else 2.3
+					if weapon_family == "sword" and not skill_active: force = 4.2 if motion.stage == 2 else 2.3
 					var hit_direction: Vector3 = Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle)) if weapon_family == "mace" or slam else blade_direction
+					if definition.get("radial", false): hit_direction = (enemy.position - player.position).normalized()
 					var contact_generation := _skill_generation
-					var contact_health: float=enemy.health
-					var mace_contact: bool=weapon_family=="mace" and motion.stage==2 and not skill_active
 					var contact_mode := mode
-					enemy_hit(enemy, definition.damage, hit_direction * force,"",float(definition.get("stagger",-1.0)) if weapon_family=="greatsword" and motion.stage==2 else -1.0,false,region)
-					if mace_contact and weapon_family=="mace" and motion.stage==2 and not skill_active and _skill_generation==contact_generation and mode==contact_mode and mode in ["practice","combat"]:
-						if is_instance_valid(enemy) and not enemy.dead and enemy.health<contact_health and enemy.has_method("apply_mace_break") and enemy.apply_mace_break():
-							if vision.can_see(enemy.position):fx.armor_break(enemy.position+Vector3.UP*.8,enemy.position)
+					var stagger: float = definition.get("stagger_duration", -1.0)
+					if definition.has("repeat_target_stagger") and _double_slash_first_hits.has(enemy.get_instance_id()):
+						stagger = float(definition.repeat_target_stagger)
+					if weapon_family == "greatsword" and motion.stage == 2:
+						stagger = float(definition.get("stagger", -1.0))
+					var health_before: float = enemy.health
+					enemy_hit(enemy, definition.damage, hit_direction * force, "", stagger, false, region)
+					if armor_stacks > 0 and _skill_generation == contact_generation and mode == contact_mode:
+						_apply_skill_armor_stacks(enemy, health_before, armor_stacks)
+					if ground_impact.is_finite(): _record_mace_slam_hit(slam_hits, enemy, health_before)
 					if armor_stab:
 						# Damage callbacks may cancel, kill, or restart the caster.
 						# Only the same live cast may commit its post-damage break.
@@ -1219,19 +1503,23 @@ func _tick_frame(delta: float) -> void:
 					if weapon_family == "sword":
 						_hit_stop = 0.045 if motion.stage == 2 else 0.025
 						_shake = .045 if skill_active else (0.035 if motion.stage == 2 else 0.018)
+			var triggers_rift := weapon_family != "mace" or SkillTags.has_tag(definition, SkillTags.GROUND_IMPACT)
+			if triggers_rift and ground_impact.is_finite() and impact_generation == _skill_generation:
+				_trigger_mace_rift(ground_impact, slam_hits)
 	if mace_dash:
 		_apply_mace_travel(sample.get("lunge_offset", 0.0))
 	if step.finished and not skill_active:
+		if fire_lift: motion.finish_mace_fire_lift()
 		if pair_strikes.active:
 			# First hand is clipped at its recovery handoff, never completed here.
 			if pair_strikes.cursor==1: pair_strikes.cancel()
-		_next_combo = (_loadout_attack_index + 1) % 3 if loadout_mode else (0 if weapon_family in ["staff", "pistol", "rifle"] else (motion.stage + 1) % 3)
+		_next_combo = 0 if fire_lift else ((_loadout_attack_index + 1) % 3 if loadout_mode else (0 if weapon_family in ["staff", "pistol", "rifle"] else (motion.stage + 1) % 3))
 		rewards.combo_left=rewards.CHAIN_WINDOW
 		_idle_time = 0
 		if weapon_family in ["pistol", "rifle"] and active_magazine().rounds == 0: request_reload()
 	_trail_clock -= delta
 	_range_clock -= delta
-	if debug_range and motion.busy and _range_clock <= 0:
+	if debug_range and not mace_skill and motion.busy and _range_clock <= 0:
 		var definition: Dictionary = motion.definition(motion.stage)
 		if weapon_family in ["staff", "pistol", "rifle"]:
 			var muzzle: Vector3 = _staff_tip(sample)
@@ -1247,6 +1535,9 @@ func _tick_frame(delta: float) -> void:
 	if weapon_family == "mace" and (motion.busy or step.finished): speed = 0.0
 	if weapon_family == "rifle" and (motion.busy or step.finished): speed = 0.0
 	if armor_stab: speed = 0.0
+	if skill_active:
+		speed = 1.4 if active_skill_id == "square_off" and motion.stage == 0 else 0.0
+		if _mace_charge_slot >= 0: speed = MACE_CHARGE_WALK_SPEED
 	if staff_energy.loading or staff_energy.casting or bow_charge >= 0.0 or _crossbow_loading != null:speed=minf(speed,4.7*.55)
 	if _bow_recovery > 0.0:
 		speed = 0.0
@@ -1264,10 +1555,14 @@ func _tick_frame(delta: float) -> void:
 	if _dodge_left > 0: player.velocity = _dodge_dir * rewards.DODGE_SPEED*anatomy.dash_multiplier()
 	player.velocity.y = -2
 	player.move_and_slide()
+	if skill_active and active_skill_id == "stormcaller" and not step.active:
+		_advance_storm_step(movement, motion_elapsed_before)
 	if _coast_mode:player.position=arena.clamp_point(player.position)
 	elif encounter_mode!="dungeon":
 		player.position.x = clampf(player.position.x, -11.6, 11.6)
 		player.position.z = clampf(player.position.z, -9.0, 9.0)
+	if skill_active and active_skill_id == "stormcaller" and step.active:
+		fx.stormcaller_ring(player.global_position, sample.effect_radius, sample.angle, motion.stage == 2)
 	# Recoil's swept movement can leave a tiny vertical floor correction for
 	# move_and_slide. Fire from the settled rifle muzzle shown this same frame.
 	if not rifle_release.is_empty():
@@ -1283,7 +1578,7 @@ func _tick_frame(delta: float) -> void:
 	for index in snapshot.size():
 		var enemy = snapshot[index]
 		if not is_instance_valid(enemy): continue
-		if enemy.has_method("advance_armor_status"):
+		if enemy.has_method("advance_combat_status"):
 			enemy.tick(delta, self, false)
 		else:
 			enemy.tick(delta, self)
@@ -1295,6 +1590,8 @@ func _tick_frame(delta: float) -> void:
 	_crowd_index_active=false
 	_update_projectiles(delta)
 	staff_flight.tick(delta, enemies, get_world_3d(), Callable(), camera)
+	if not sword_wave_release.is_empty() and mode in ["practice", "combat"]:
+		_release_sword_wave(sword_wave_release)
 	if mode == "practice" and encounter_mode not in ["village_study","coast_forms","wreck_shore"]:
 		if not motion.busy:
 			_dummy_idle += delta
@@ -1324,6 +1621,9 @@ func _tick_frame(delta: float) -> void:
 					_reset_attack_step()
 					staff_flight.clear()
 					ground_fire.clear()
+					_mace_ground.clear()
+					mace_fire_lobs.clear()
+					mace_fire_buff_left = 0.0
 					casing_fx.clear()
 					reset_gun_magazines()
 					_held = false
@@ -1332,6 +1632,8 @@ func _tick_frame(delta: float) -> void:
 				else:
 					spawn_wave()
 	_advance_revive(delta)
+	if mace_skill and skill_active and not motion.busy and skill_cut_index == 0 and not _mace_skill_motion.definition(1).is_empty():
+		_start_skill_stage(1)
 	_visual_tick(delta)
 	_finish_skill_cut()
 	_advance_paired_hand()
@@ -1345,10 +1647,264 @@ func _reset_attack_step() -> void:
 	melee_approach_plan.clear()
 	attack_step_travelled = 0.0
 
+func _advance_storm_step(movement: Vector3, elapsed_before: float) -> void:
+	if motion.stage >= 2 or anatomy.leg_count() == 0: return
+	var sweep: Dictionary = motion.definition(motion.stage)
+	var recovery_start: float = sweep.windup + sweep.active
+	if elapsed_before + 0.00000001 < recovery_start or motion.elapsed <= recovery_start: return
+	if _storm_step_direction.is_zero_approx():
+		if movement.length_squared() < 0.001: return
+		_storm_step_direction = movement.normalized()
+		_storm_step_start = maxf(recovery_start, elapsed_before)
+		_sword_skill_lunge.reset()
+	var distance: float = STORM_STEP_DISTANCE * anatomy.dash_multiplier()
+	if encounter_mode == "dungeon" and is_instance_valid(arena.hazards):
+		distance *= arena.hazards.speed_scale(player.global_position)
+	var progress := clampf((motion.elapsed - _storm_step_start) / STORM_STEP_DURATION, 0.0, 1.0)
+	var eased := 1.0 - (1.0 - progress) * (1.0 - progress)
+	_sword_skill_lunge.advance(player, _storm_step_direction, distance * eased, enemies, distance)
+
 func _armor_line_clear(enemy) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(player.global_position + Vector3.UP * .68, enemy.global_position + Vector3.UP * .68, 1)
 	query.hit_from_inside = true
 	return player.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+func _apply_skill_armor_stacks(enemy, health_before: float, amount: int, fill: bool = false) -> void:
+	if is_instance_valid(enemy) and enemy.health < health_before and enemy.apply_mace_break(amount, fill):
+		var contact: Vector3 = enemy.position + Vector3.UP * .8
+		fx.armor_break(contact, enemy.position)
+		if fill:
+			fx.burst(contact, Color("#ffe6ad"), 13, enemy.position)
+
+func _advance_mace_skill(step: Dictionary, sample: Dictionary) -> void:
+	var spec: Dictionary = _mace_skill_motion.definition(motion.stage)
+	if active_skill_id == "mace_earth_wave":
+		var distance := _mace_leap_offset.length()
+		if distance > 0.0:
+			_sword_skill_lunge.advance(player, _mace_leap_offset, distance * smoothstep(0.0, 1.0, _mace_leap_progress()), [], distance)
+		if step.damage_ready: _land_mace_leap(step.contact_pose, spec)
+		return
+	if spec.lunge_distance > 0.0 and anatomy.leg_count() > 0:
+		var forward := Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle))
+		_sword_skill_lunge.advance(player, forward, float(sample.lunge_offset), enemies, float(spec.lunge_distance))
+	if not step.damage_ready: return
+	if spec.get("fire_buff", false):
+		mace_fire_buff_left = MaceSkillMotion.FIRE_BUFF_DURATION
+		_mace_fire_next_side = 0
+		fx.burst(_mace_head_at(step.contact_pose), Color("#ffad65"), 12, player.position)
+		audio.play("fire_cast")
+		return
+	var center: Vector3 = _mace_skill_motion.area_center(player.position, step.contact_pose)
+	var angle: float = motion.aim_angle
+	var places_rift := spec.has("rift_radius")
+	var ground_impact := SkillTags.has_tag(spec, SkillTags.GROUND_IMPACT)
+	if places_rift and not _mace_ground_line_clear(player.position, center): return
+	var half_arc: float = spec.arc * .5
+	var radius: float = spec.area_radius
+	var color := Color("#ffd19a") if motion.stage == 1 else Color("#efa467")
+	var pulling: bool = spec.get("gathers", false)
+	if pulling: color = Color("#8de0cf")
+	if places_rift: color = Color("#74bfae")
+	if active_skill_id == "mace_impact":
+		_mace_impact_flash = fx.mace_impact_sprite(center, radius)
+	elif active_skill_id == "mace_double_impact":
+		var style := MaceImpactVisual.Style.DOUBLE_FINISHER if motion.stage == 1 else MaceImpactVisual.Style.DOUBLE_START
+		_mace_impact_flash = fx.mace_impact_sprite(center, radius, style)
+	elif active_skill_id not in ["mace_sweep", "mace_gather", "mace_aftershock"]:
+		fx.sector(center + Vector3.UP * .045, radius, angle - half_arc, angle + half_arc, Color(color, .20), 0.0, .20)
+		fx.sector(center + Vector3.UP * .055, radius, angle - half_arc, angle + half_arc, Color(color, .80), radius - .09, .25)
+	if spec.kind == "slam":
+		fx.burst(center + Vector3.UP * .08, color, 16, center)
+	match active_skill_id:
+		"mace_sweep":
+			fx.burst(_mace_head_at(step.contact_pose), color, 7 if motion.stage == 1 else 4, player.position)
+		"mace_gather":
+			_mace_impact_flash = fx.mace_ground_contact(center, minf(radius, 1.35), .53)
+			fx.mace_pull_vortex(center, radius)
+		"mace_aftershock":
+			_mace_impact_flash = fx.mace_ground_contact(center, 1.2, .53)
+		"mace_armor_counter":
+			fx.burst(_mace_head_at(step.contact_pose), Color("#dcf4ff"), 7, player.position)
+	audio.play("heavy")
+	_shake = maxf(_shake, .07 if spec.kind == "slam" else .045)
+	var generation := _skill_generation
+	var direct_hits: Dictionary = {}
+	var armor_stacks: int = spec.get("armor_stacks", 0)
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.dead or not _mace_skill_motion.area_contains(center, enemy.position): continue
+		if not _armor_line_clear(enemy): continue
+		if (places_rift or pulling) and not _mace_ground_line_clear(center, enemy.position): continue
+		var outward: Vector3 = enemy.position - center
+		outward.y = 0.0
+		var health_before: float = enemy.health
+		enemy_hit(enemy, spec.damage, outward.normalized() * float(spec.knockback), "physical")
+		if generation != _skill_generation: return
+		if armor_stacks > 0 and is_instance_valid(enemy):
+			_apply_skill_armor_stacks(enemy, health_before, armor_stacks, enemy.get_instance_id() == _mace_parried_attacker_id)
+		if ground_impact: _record_mace_slam_hit(direct_hits, enemy, health_before)
+		if pulling and is_instance_valid(enemy) and not enemy.dead and enemy.health < health_before:
+			var slow_fraction: float = spec.slow_fraction
+			enemy.apply_movement_slow(slow_fraction, MaceSkillMotion.GATHER_SLOW_DURATION)
+			enemy.gather_to(center)
+		_hit_stop = maxf(_hit_stop, .035)
+	if places_rift:
+		var rift_radius: float = spec.rift_radius
+		var cracks: Sprite3D = fx.mace_rift_decal(center, rift_radius, angle, MaceRiftVisual.Phase.PLACEMENT, .18)
+		_mace_ground.place_rift(center, rift_radius, cracks, angle)
+	elif ground_impact:
+		_trigger_mace_rift(center, direct_hits)
+
+func _mace_leap_landing(grade: int) -> Vector3:
+	var origin: Vector3 = player.position
+	var dash_count: float = MaceSkillMotion.LEAP_GRADES[grade - 1].dash_count
+	if dash_count == 0.0 or anatomy.leg_count() == 0: return origin
+	var max_distance: float = dash_count * rewards.DODGE_SPEED * DashVisual.DURATION
+	var destination := origin + aim * max_distance
+	if test_aim.length_squared() <= .001:
+		var ray_origin := camera.project_ray_origin(_mouse_position)
+		var ray := camera.project_ray_normal(_mouse_position)
+		if absf(ray.y) > .001:
+			destination = ray_origin + ray * ((origin.y - ray_origin.y) / ray.y)
+	var offset := destination - origin
+	offset.y = 0.0
+	destination = origin + offset.limit_length(max_distance)
+	if _coast_mode:
+		destination = arena.clamp_point(destination)
+	elif encounter_mode != "dungeon":
+		destination.x = clampf(destination.x, -11.6, 11.6)
+		destination.z = clampf(destination.z, -9.0, 9.0)
+	offset = destination - origin
+	offset.y = 0.0
+	var collision := KinematicCollision3D.new()
+	if player.test_move(player.global_transform, offset, collision, .001) and collision.get_normal().y < .7:
+		return origin + offset.normalized() * clampf(collision.get_travel().dot(offset.normalized()), 0.0, offset.length())
+	return origin + offset
+
+func _mace_leap_angle(offset: Vector3) -> float:
+	var direction := aim if offset.is_zero_approx() else offset
+	return atan2(direction.z, direction.x)
+
+func _update_mace_charge_preview() -> void:
+	if _mace_charge_slot < 0 or mode not in ["practice", "combat"]: return
+	var grade: int = _mace_skill_motion.charge_grade()
+	var footprint: Dictionary = _mace_skill_motion.charge_footprint()
+	if active_skill_id == "mace_gather":
+		var contact := _hand_pose(_mace_skill_motion.charge_contact_pose())
+		var center: Vector3 = _mace_skill_motion.area_center(player.position, contact)
+		_mace_ground.show_charge_preview(fx, center, 0.0, footprint, grade)
+	else:
+		var landing := _mace_leap_landing(grade)
+		var angle := _mace_leap_angle(landing - player.position)
+		_mace_ground.show_charge_preview(fx, landing, angle, footprint, grade)
+
+func _mace_leap_progress() -> float:
+	var spec: Dictionary = _mace_skill_motion.definition(0)
+	var contact_time: float = spec.windup + spec.active * spec.impact_progress
+	return clampf(_mace_skill_motion.elapsed / contact_time, 0.0, 1.0)
+
+func _land_mace_leap(contact_pose: Dictionary, spec: Dictionary) -> void:
+	var center: Vector3 = player.position
+	var impact := _mace_head_at(contact_pose)
+	var color := MaceGroundEffects.LEAP_COLOR
+	var angle: float = motion.aim_angle
+	var strength := inverse_lerp(MaceSkillMotion.LEAP_GRADES[0].arc, MaceSkillMotion.LEAP_GRADES[2].arc, float(spec.arc))
+	_mace_impact_flash = fx.mace_ground_contact(impact, lerpf(1.15, 1.65, strength), lerpf(.68, .95, strength))
+	fx.mace_leap_wave(center, spec.area_radius, angle, spec.arc, strength)
+	fx.burst(impact + Vector3.UP * .08, color, 24, center)
+	audio.play("slam")
+	_shake = maxf(_shake, .15)
+	var direct_hits: Dictionary = {}
+	var generation := _skill_generation
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.dead: continue
+		var outward: Vector3 = enemy.position - center
+		if absf(outward.y) > 1.0: continue
+		outward.y = 0.0
+		var distance_squared := outward.length_squared()
+		if not _mace_skill_motion.area_contains(center, enemy.position) or not _mace_ground_line_clear(center, enemy.position): continue
+		var damage: float = spec.damage if distance_squared <= float(spec.core_radius) ** 2 else spec.edge_damage
+		var health_before: float = enemy.health
+		enemy_hit(enemy, damage, outward.normalized() * float(spec.knockback), "physical", spec.stagger_duration)
+		if generation != _skill_generation or mode not in ["practice", "combat"]: return
+		_record_mace_slam_hit(direct_hits, enemy, health_before)
+		_hit_stop = maxf(_hit_stop, .045)
+	if SkillTags.has_tag(spec, SkillTags.GROUND_IMPACT):
+		_trigger_mace_rift(impact, direct_hits)
+
+func _record_mace_slam_hit(hit_damage: Dictionary, enemy, health_before: float) -> void:
+	if is_instance_valid(enemy) and not enemy.dead and enemy.health < health_before:
+		hit_damage[enemy.get_instance_id()] = health_before - enemy.health
+
+func _trigger_mace_rift(impact: Vector3, hit_damage: Dictionary) -> void:
+	if not _mace_ground.can_trigger_rift(impact): return
+	var center: Vector3 = _mace_ground.rift.center
+	if not _mace_ground_line_clear(_hand_origin(), impact) or not _mace_ground_line_clear(impact, center): return
+	fx.mace_rift_decal(center, _mace_ground.rift.radius, _mace_ground.rift.angle, MaceRiftVisual.Phase.CHARGE, MaceGroundEffects.RIFT_ECHO_DELAY)
+	_mace_ground.queue_rift_echo(hit_damage)
+
+func _resolve_mace_rift_echo(echo: Dictionary) -> void:
+	var center: Vector3 = echo.center
+	var radius: float = echo.radius
+	var color := Color("#bff1df")
+	var deals_damage: bool = not echo.hit_damage.is_empty()
+	fx.mace_rift_decal(center, radius, echo.angle, MaceRiftVisual.Phase.ECHO, .38)
+	fx.burst(center + Vector3.UP * .10, Color("#6b8f80"), 12, center)
+	fx.burst(center + Vector3.UP * .18, color, 16, center)
+	_shake = maxf(_shake, .135 if deals_damage else .07)
+	audio.play("nova")
+	var generation := _mace_ground.generation
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.dead: continue
+		var dealt: float = echo.hit_damage.get(enemy.get_instance_id(), 0.0)
+		if dealt <= 0.0: continue
+		fx.burst(enemy.position + Vector3.UP * .65, color, 6, enemy.position)
+		_apply_enemy_hit(enemy, dealt * MaceGroundEffects.RIFT_DAMAGE_FRACTION, Vector3.ZERO, "physical")
+		if generation != _mace_ground.generation or mode not in ["practice", "combat"]: return
+
+func _mace_ground_line_clear(from: Vector3, to: Vector3) -> bool:
+	if from.is_equal_approx(to): return true
+	var query := PhysicsRayQueryParameters3D.create(from + Vector3.UP * .4, to + Vector3.UP * .4, 1)
+	query.hit_from_inside = true
+	return player.get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+
+func _mace_head_at(pose: Dictionary) -> Vector3:
+	var direction := Vector3(cos(pose.angle), 0.0, sin(pose.angle))
+	var weapon_axis := direction * cos(pose.pitch) + Vector3.UP * sin(pose.pitch)
+	return _hand_origin() + direction * float(pose.radius) + Vector3.UP * float(pose.grip_height) + weapon_axis * float(pose.blade_length)
+
+func _mace_scoop_mirrored(pose: Dictionary) -> bool:
+	var tangent := Vector3(-sin(pose.angle), 0, cos(pose.angle))
+	if motion.stage == 1: tangent = -tangent
+	return tangent.dot(camera.global_basis.x) < 0.0
+
+func _launch_mace_fire_lob(pose: Dictionary) -> void:
+	var origin := _mace_head_at(pose)
+	if not _mace_ground_line_clear(player.position, origin): return
+	_mace_fire_scoop_flash = fx.mace_fire_scoop(origin, _mace_scoop_mirrored(pose))
+	var angle: float = motion.aim_angle + shot_rng.randf_range(-.105, .105)
+	var distance: float = MaceFireLobs.LANDING_DISTANCE + shot_rng.randf_range(-.35, .35)
+	var direction := Vector3(cos(angle), 0.0, sin(angle))
+	var target := player.position + direction * distance + Vector3.UP * .04
+	mace_fire_lobs.launch(origin, target, direction, camera)
+
+func _mace_fire_impact(point: Vector3, direct: Node3D, hit_ids: Dictionary) -> void:
+	if mode not in ["practice", "combat"]: return
+	if direct != null:
+		fx.mace_fire_scoop(point, false)
+	audio.play("fire_impact")
+	var generation := _mace_ground.generation
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.dead: continue
+		var target_id: int = enemy.get_instance_id()
+		if hit_ids.has(target_id): continue
+		var offset: Vector3 = enemy.position - point
+		var height_difference := absf(offset.y)
+		offset.y = 0.0
+		if enemy != direct and (height_difference > 1.3 or offset.length_squared() > MaceFireLobs.BLAST_RADIUS ** 2
+			or not _mace_ground_line_clear(point, enemy.position)): continue
+		hit_ids[target_id] = true
+		enemy_hit(enemy, MaceFireLobs.DAMAGE, offset.normalized(), "fire")
+		if generation != _mace_ground.generation or mode not in ["practice", "combat"]: return
 
 func _apply_armor_travel(desired: float) -> void:
 	if anatomy.leg_count()==0:return
@@ -1385,6 +1941,45 @@ func _staff_tip(pose: Dictionary) -> Vector3:
 	# The same rigid vector drives the sprite endpoints and the launch point.
 	var direction := Vector3(cos(float(pose.angle)), 0, sin(float(pose.angle)))
 	return _hand_origin() + direction * float(pose.radius) + Vector3.UP * float(pose.grip_height) + (direction * cos(float(pose.pitch)) + Vector3.UP * sin(float(pose.pitch))) * float(pose.blade_length)
+
+func _release_sword_wave(definition: Dictionary) -> void:
+	var direction := Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle))
+	var origin := player.position + Vector3.UP * .75
+	var projectile := definition.duplicate()
+	projectile.element = "physical"
+	projectile.projectile_visual = definition.get("projectile_visual", "sword_wave")
+	projectile.launch_origin = origin
+	if projectile.projectile_visual == "vacuum_wave":
+		projectile.wake_ground_y = player.global_position.y
+	projectile.knockback = 2.0
+	staff_flight.spawn_fireball(origin + direction * .65, direction, projectile, camera)
+	audio.play("sword")
+
+func _storm_blade_can_release() -> bool:
+	return not skill_active and _storm_blade_has_current_sword()
+
+func _storm_blade_has_current_sword() -> bool:
+	return sword_wave_buff_left > 0.0 and weapon_family == "sword" and _storm_blade_item == (active_item if loadout_mode else "")
+
+func _storm_blade_single_item() -> String:
+	if not loadout_mode or _storm_blade_item.is_empty(): return ""
+	# Let the last one-handed cut finish with the same grip if the buff expires mid-swing.
+	var finishing_swing: bool = _storm_blade_single_swing and motion.busy and not skill_active and active_item == _storm_blade_item
+	if sword_wave_buff_left <= 0.0 and not finishing_swing: return ""
+	if not loadout.for_pair().has(_storm_blade_item) or not _body_item_usable(_storm_blade_item): return ""
+	return _storm_blade_item
+
+func _storm_blade_coated_rig() -> Node3D:
+	if not loadout_mode:
+		return avatar if _storm_blade_item.is_empty() and weapon_family == "sword" else null
+	if _storm_blade_item.is_empty(): return null
+	if dual_visual.visible:
+		var pair: Dictionary = loadout.sets[loadout.active]
+		if _storm_blade_item == pair.main: return dual_visual.rigs[0]
+		if _storm_blade_item == pair.off: return dual_visual.rigs[1]
+	elif _storm_blade_item == active_item:
+		return avatar
+	return null
 
 func _apply_rifle_recoil(desired: float) -> void:
 	if anatomy.leg_count()==0:return
@@ -1443,6 +2038,9 @@ func _release_ranged(pose: Dictionary) -> void:
 
 func _projectile_damage(enemy, damage: float, knock: Vector3, element: String) -> void:
 	enemy_hit(enemy, damage, knock, element)
+
+func _sword_wave_damage(enemy, damage: float, knock: Vector3, kind: String) -> void:
+	enemy_hit(enemy, damage, knock, "physical", .45 if kind == "vacuum_wave" else -1.0)
 
 func _projectile_impact(where: Vector3, reason: String, element: String) -> void:
 	fx.burst(where, Color("#ffb347") if element == "fire" else Color("#ffe5a3"), 8 if reason == "enemy" else 4)
@@ -1520,6 +2118,7 @@ func _present_frame(delta: float) -> void:
 	_camera_focus = _camera_focus.lerp(focus, 1.0 - exp(-lerpf(5,20,focus_amount)*delta))
 	camera.position = _camera_focus + CAMERA_OFFSET + Vector3(randf_range(-_shake, _shake), 0, randf_range(-_shake, _shake))
 	camera.look_at(_camera_focus)
+	_update_mace_charge_preview()
 	var sample: Dictionary = current_visual_sample()
 	# Completed melee cuts retain their authored side so the next windup
 	# starts from the same visible pose. Only a fresh stance uses this fallback.
@@ -1529,10 +2128,68 @@ func _present_frame(delta: float) -> void:
 	sample.smooth_body = _uses_dual_hands()
 	sample.paired_body = sample.smooth_body
 	var dash: Dictionary=DashVisual.sample(_dodge_left,_dodge_facing,_dodge_dir,camera)
+	var body_aim := aim
+	if skill_active:
+		var body_angle: float = motion.aim_angle + float(sample.get("body_spin", 0.0))
+		body_aim = Vector3(cos(body_angle), 0, sin(body_angle))
+	var leap_height := 0.0
+	if active_skill_id == "mace_earth_wave" and not _mace_leap_offset.is_zero_approx():
+		var progress := _mace_leap_progress()
+		leap_height = sin(PI * progress) * minf(1.35, _mace_leap_offset.length() * .31)
+	avatar.set_leap_height(leap_height)
+	dual_visual.position.y = leap_height
 	avatar.crawl_ready=_crawl_pose_ready()
-	avatar.update_pose(camera, _dodge_facing if _dodge_left>0 else aim, _movement().length_squared() > 0.01 and mode in ["practice", "combat"], sample, reach, _hurt, _dodge_left, delta, mode == "dead",dash)
+	avatar.update_pose(camera, _dodge_facing if _dodge_left>0 else body_aim, _movement().length_squared() > 0.01 and mode in ["practice", "combat"], sample, reach, _hurt, _dodge_left, delta, mode == "dead",dash)
 	_update_dual(delta)
 	if use_cutout_avatar:avatar.update_cutout(dual_visual)
+	var playing := mode in ["practice", "combat"]
+	var sword_in_play := weapon_family == "sword" and playing
+	var left_hand := _is_left_hand()
+	var weapon_rig = dual_visual.rigs[int(left_hand)] if dual_visual.visible else avatar
+	var mace_blade: Dictionary = {}
+	var mace_trail_id := ""
+	var mace_strike := Vector2i(_skill_generation, motion.stage)
+	if playing and weapon_family == "mace" and weapon_rig.weapon.visible:
+		mace_blade = weapon_rig.get_blade_points()
+		if is_instance_valid(_mace_impact_flash):
+			if use_cutout_avatar or active_skill_id == "mace_double_impact":
+				_mace_impact_flash.align_flash(mace_blade.tip, camera.global_basis.z)
+			_mace_impact_flash = null
+		if is_instance_valid(_mace_fire_scoop_flash):
+			_mace_fire_scoop_flash.align_head(mace_blade.tip)
+			_mace_fire_scoop_flash = null
+		if motion.busy and sample.phase == "active":
+			if skill_active and motion == _mace_skill_motion:
+				mace_trail_id = active_skill_id
+				if active_skill_id in ["mace_sweep", "mace_armor_counter"]:
+					var tangent := Vector3(-sin(sample.angle), 0, cos(sample.angle))
+					if left_hand: tangent = -tangent
+					var style := MaceSweepVisual.Style.SWEEP
+					if active_skill_id == "mace_armor_counter":
+						style = MaceSweepVisual.Style.COUNTER if _mace_parried_attacker_id != 0 else MaceSweepVisual.Style.ARMOR
+					fx.mace_sweep_head(camera, mace_blade.tip, tangent, sample.progress, mace_strike, style)
+			elif motion.definition(motion.stage).get("kind") == "fire_lift":
+				mace_trail_id = "mace_fissure"
+			elif not skill_active and motion.stage in [0, 1, 2]:
+				var forward := Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle))
+				fx.mace_basic_head(camera, mace_blade.tip, forward, sample.progress, motion.stage, left_hand)
+				if motion.stage == 0: mace_trail_id = "basic_lift"
+				elif motion.stage == 2: mace_trail_id = "basic_slam"
+	fx.mace_swing(mace_blade if not mace_trail_id.is_empty() else {}, mace_strike, mace_trail_id)
+	fx.mace_ember_coat(camera, mace_blade if mace_fire_buff_left > 0.0 and primary_family() == "mace" else {}, run_time)
+	var coat_blade: Dictionary = {}
+	if playing and sword_wave_buff_left > 0.0:
+		var coat_rig := _storm_blade_coated_rig()
+		if coat_rig != null and coat_rig.weapon.visible:
+			coat_blade = coat_rig.get_blade_points()
+	fx.storm_blade_coat(camera, coat_blade, run_time, sword_wave_buff_left)
+	if sword_in_play and not skill_active and motion.busy and sample.phase == "active":
+		var blade: Dictionary = weapon_rig.get_blade_points()
+		fx.basic_sword_slash(camera, blade.grip, blade.tip, sample.progress, motion.stage, left_hand)
+	elif skill_active and active_skill_id == "double_slash" and motion.busy and sample.phase == "active" and playing:
+		fx.double_slash(camera, avatar.get_blade_points(), sample, motion.stage, _skill_generation)
+	elif skill_active and active_skill_id == "stormcaller" and motion.busy and sample.phase == "active" and playing:
+		fx.spin_slash(camera, avatar.get_blade_points(), sample.progress, motion.stage)
 	var nearby := _nearby_downed_companion()
 	for companion in companions: companion.present(camera, delta, companion == nearby)
 	_present_party_mark()
@@ -1764,6 +2421,7 @@ func _melee_contact_region(enemy,step: Dictionary) -> String:
 	if enemy is CoastalEnemy:
 		var attack: Dictionary = motion.definition(motion.stage)
 		var reach := Vector2(float(attack.reach), float(attack.get("width", 0.0)) * .5).length() + .001
+		if attack.get("radial", false): reach = maxf(reach, float(attack.effect_radius) + float(attack.ring_width))
 		var offset: Vector3 = enemy.position - origin
 		offset.y = 0
 		# Keep the fallback body disk as well as the projected sprite in bounds.
@@ -1778,11 +2436,14 @@ func _melee_contact_region(enemy,step: Dictionary) -> String:
 	return "body" if motion.is_target_hit(origin,enemy.position,.55 if enemy.kind=="elite" else .36,step.previous_angle,step.current_angle) else ""
 func enemy_hit(enemy, damage: float, knock: Vector3, element: String = "",slam_stagger: float=-1.0,ongoing: bool=false,contact_region: String="") -> void:
 	if not is_instance_valid(enemy) or enemy.dead or not is_finite(damage) or damage <= 0: return
-	var critical: bool=not ongoing and combat_rng.randf()<stats.value("critical_chance")
-	damage*=stats.value("damage_multiplier")*(stats.value("critical_multiplier") if critical else 1.0)
+	var critical: bool = not ongoing and combat_rng.randf() < stats.value("critical_chance")
+	damage *= stats.value("damage_multiplier") * (stats.value("critical_multiplier") if critical else 1.0)
 	if enemy.has_method("calculate_incoming_damage"):
 		damage = enemy.calculate_incoming_damage(damage, element)
 	if not is_finite(damage) or damage <= 0: return
+	_apply_enemy_hit(enemy, damage, knock, element, slam_stagger, ongoing, contact_region, critical)
+
+func _apply_enemy_hit(enemy, damage: float, knock: Vector3, element: String, slam_stagger: float = -1.0, ongoing: bool = false, contact_region: String = "", critical: bool = false) -> void:
 	var heavy: bool = (element == "physical" and damage >= 45.0) or (element.is_empty() and (motion.stage == 2 or damage >= 100 or (weapon_family == "mace" and motion.stage == 0)))
 	if ongoing:heavy=false
 	var ordinary_sword := weapon_family == "sword" and element.is_empty() and not skill_active
@@ -1898,11 +2559,14 @@ func damage_player(amount: float,source: Vector3=Vector3.INF,guard_cost: float=1
 	audio.play("hit")
 
 func _die_from_body() -> void:
+	sword_wave_buff_left = 0.0
+	mace_fire_buff_left = 0.0
+	mace_fire_lobs.clear()
 	if is_instance_valid(brine_zones):brine_zones.clear()
 	if mode=="dead":return
 	if encounter_mode=="coast":clear_hostile_projectiles()
 	_cancel_body_actions();flasks.cancel_effects();body_lab_open=false;mode="dead"
-	fx.clear_transients();staff_flight.clear();ground_fire.clear();casing_fx.clear();reset_gun_magazines()
+	fx.clear_transients();staff_flight.clear();ground_fire.clear();_mace_ground.clear();casing_fx.clear();reset_gun_magazines()
 	audio.play("death");ui.show_mode(mode)
 
 func shoot(where: Vector3,direction: Vector3,damage: float,parryable: bool=false,owner_enemy: Node=null,guard_cost: float=1.0,max_range: float=16.5,body_part: String="torso",body_amount: float=-1) -> void:
@@ -2075,8 +2739,11 @@ func activate_loadout(index: int) -> bool:
 
 func _uses_dual_hands() -> bool:
 	if not loadout_mode or skill_active: return false
+	if weapon_family == "mace" and motion.definition(motion.stage).get("kind") == "fire_lift": return false
 	var pair: Dictionary=loadout.sets[loadout.active]
-	return pair.off!=""
+	var single_item := _storm_blade_single_item()
+	# The left-hand rig still presents a lone sword if that hand received the buff.
+	return pair.off != "" and (single_item.is_empty() or single_item == pair.off)
 
 func _is_left_hand() -> bool:
 	return _uses_dual_hands() and active_item==loadout.sets[loadout.active].off
@@ -2103,15 +2770,17 @@ func _update_dual(delta: float) -> void:
 	var direction:=Vector3(cos(angle),0,sin(angle))
 	var families: Array=[loadout.items[pair.main].family if pair.main!="" else "sword",loadout.items[pair.off].family if pair.off!="" else "sword"]
 	dual_visual.update_hands(camera,direction,[pair.main,pair.off],families,1 if _is_left_hand() else 0,current_visual_sample(),motion.busy or guns_reloading(),delta,mode=="dead",skill_active,avatar.facing,avatar.paired_shoulders(),DashVisual.sample(_dodge_left,_dodge_facing,_dodge_dir,camera),"shield" if right_action()=="guard" and has_shield() else right_action())
-	for i in range(2):dual_visual.rigs[i].set_equipment_visible(_body_item_usable(pair.main if i==0 else pair.off) and mode!="dead" and (anatomy.leg_count()>0 or _crawl_pose_ready()))
+	var visible_items := available_body_items()
+	for i in range(2):dual_visual.rigs[i].set_equipment_visible((pair.main if i==0 else pair.off) in visible_items and mode!="dead" and (anatomy.leg_count()>0 or _crawl_pose_ready()))
 
 func sword_skills_available() -> bool:
-	return false
+	return primary_family() == "sword" and _weapon_skills_available()
 
-func _disabled_sword_skills_available() -> bool:
-	if not loadout_mode: return weapon_family == "sword"
-	var id: String = loadout.primary()
-	return id != "" and loadout.items[id].family == "sword"
+func mace_skills_available() -> bool:
+	return primary_family() == "mace" and _weapon_skills_available()
+
+func _weapon_skills_available() -> bool:
+	return body_action_ready() and active_weapon_possible() and mode in ["practice", "combat"] and not skill_active and not motion.busy and not pair_strikes.active and _dodge_left <= 0.0 and not guns_reloading() and not _arrival_locked and not sword_skills_open and not inventory_open and not stats_open and not dungeon_peek.visible and _room_fade == null
 
 func _advance_paired_hand() -> void:
 	if not pair_strikes.active or pair_strikes.cursor!=0: return
@@ -2136,8 +2805,8 @@ func primary_family() -> String:
 
 func has_shield() -> bool:
 	if not loadout_mode: return weapon_family == "shield" and active_weapon_possible()
-	for id in loadout.for_pair():
-		if loadout.items[id].family == "shield" and _body_item_usable(id): return true
+	for id in available_body_items():
+		if loadout.items[id].family == "shield": return true
 	return false
 
 func primary_definition() -> Dictionary:
@@ -2155,16 +2824,30 @@ func right_action() -> String:
 func _can_parry() -> bool:
 	if not body_action_ready():return false
 	return mode in ["practice","combat"] and not anatomy.dead() and not inventory_open and not stats_open and _dodge_left<=0 and not motion.busy and not skill_active and not pair_strikes.active and not guns_reloading() and readiness.broken_left<=0
+
+func _mace_armor_parry_windup() -> bool:
+	return skill_active and active_skill_id == "mace_armor_counter" and motion.busy and motion.elapsed < MaceSkillMotion.ARMOR_COUNTER_WINDOW - .00000001
+
 func incoming_attack(amount: float,source: Vector3,parryable: bool,attacker: Node=null,guard_cost: float=1.0,body_part: String="torso",body_amount: float=-1,delivery: StringName=&"melee") -> void:
 	if mode not in ["practice","combat"] or (_iframes>0 or rewards.invulnerable() or _dodge_step_protected) or not is_finite(amount) or amount<=0:return
-	if parryable and primary_family() in ReadyRules.MELEE and _can_parry() and readiness.try_parry(source,player.position,aim,stamina,ReadyRules.PARRY_COST*stats.value("stamina_cost_multiplier")*anatomy.action_cost_multiplier()):
-		_spend_stamina(ReadyRules.PARRY_COST*stats.value("stamina_cost_multiplier")*anatomy.action_cost_multiplier())
-		if is_instance_valid(attacker) and attacker.has_method("receive_parry"):attacker.receive_parry()
-		fx.number(player.position+Vector3.UP*1.8,"PARRY!",true)
-		rewards.grant_counter()
-		fx.parry_clash(_guard_contact_point(source),true)
-		fx.ring(player.position,.85,Color(.7,1,1,.9),.22)
-		audio.play("parry");return
+	if parryable:
+		var mace_parry: bool = delivery == &"melee" and _mace_armor_parry_windup() and _mace_parried_attacker_id == 0 and is_instance_valid(attacker) and not attacker.get("dead") and body_action_ready()
+		if mace_parry or (primary_family() in ReadyRules.MELEE and _can_parry()):
+			var cost: float = ReadyRules.PARRY_COST * stats.value("stamina_cost_multiplier") * anatomy.action_cost_multiplier()
+			if readiness.try_parry(source,player.position,aim,stamina,cost,mace_parry):
+				_spend_stamina(cost)
+				var clash_point := _guard_contact_point(source)
+				if mace_parry:
+					_mace_parried_attacker_id = attacker.get_instance_id()
+					fx.burst(clash_point, Color("#e5fbff"), 10, player.position)
+					_shake = maxf(_shake, .07)
+				else:
+					rewards.grant_counter()
+				if is_instance_valid(attacker) and attacker.has_method("receive_parry"):attacker.receive_parry()
+				fx.number(player.position+Vector3.UP*1.8,"PARRY!",true)
+				fx.parry_clash(clash_point,true)
+				fx.ring(player.position,.85,Color(.7,1,1,.9),.22)
+				audio.play("parry");return
 	damage_player(amount,source,guard_cost,"physical",body_part,body_amount,not parryable,delivery)
 func start_spitter_trial() -> void:
 	start_run(true);clear_actors();drill_kind="spitter"
@@ -2424,7 +3107,7 @@ func has_dual_weapons() -> bool:
 		if bool(loadout.items[id].two_hand) or loadout.items[id].family == "shield":return false
 	return true
 func attack_rate() -> float:
-	var bonus:=0.0
+	var bonus := 0.10 if _storm_blade_has_current_sword() else 0.0
 	if weapon_family=="pistol":bonus=_pistol_shot_bonus if motion.busy else (pistol_aim_state.speed_bonus() if readiness.held else 0.0)
 	return stats.value("attack_speed")*DualRules.speed(has_dual_weapons())*(1+bonus)*weapon_injury_factor()
 func reload_rate() -> float:return stats.value("reload_speed")*DualRules.speed(has_dual_weapons())*weapon_injury_factor()
@@ -2446,6 +3129,8 @@ func use_health_flask() -> bool:
 func available_body_items() -> Array:
 	var result: Array=[]
 	if not loadout_mode:return result
+	var single_item := _storm_blade_single_item()
+	if not single_item.is_empty(): return [single_item]
 	for id in loadout.for_pair():
 		if _body_item_usable(id):result.append(id)
 	return result
@@ -2491,7 +3176,7 @@ func restore_body() -> void:
 func set_debug_health_zero() -> void:
 	health=0;_visual_tick(0)
 func toggle_body_lab() -> void:
-	if mode not in ["practice","combat"] or inventory_open or stats_open or dungeon_peek.visible:return
+	if mode not in ["practice","combat"] or inventory_open or stats_open or sword_skills_open or dungeon_peek.visible:return
 	if not body_lab_open:_cancel_body_actions()
 	body_lab_open=not body_lab_open;_visual_tick(0)
 

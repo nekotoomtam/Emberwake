@@ -41,7 +41,7 @@ func _advance(delta: float,game) -> void:
 		elif returning:
 			var home:=home_position-global_position;home.y=0
 			if home.length()<.25:returning=false;state="idle"
-			else:_move(home.normalized()*Rules.SPEED*delta,game)
+			else:_move(home.normalized()*Rules.SPEED*movement_speed_scale()*delta,game)
 		elif state=="parried":
 			if cooldown<=0:state="chase"
 		else:
@@ -53,7 +53,7 @@ func _advance(delta: float,game) -> void:
 				state="chase"
 				if not _advance_distant_chase(delta,game,offset):
 					if distance<=Rules.TRIGGER and cooldown<=0 and line_of_sight(combat_target):_begin(game,offset)
-					elif distance>.9:_move(_steer(offset.normalized()*float(_stats.speed),game)*delta,game)
+					elif distance>.9:_move(_steer(offset.normalized()*float(_stats.speed),game)*movement_speed_scale()*delta,game)
 			else:state="idle"
 	knockback=knockback.move_toward(Vector3.ZERO,delta*14)
 	if knockback.length_squared()>.001:_move(knockback*delta,game)

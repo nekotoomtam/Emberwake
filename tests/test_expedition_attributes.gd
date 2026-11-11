@@ -50,8 +50,10 @@ func run() -> void:
 	game.mana -= 20
 	var spent_mana: float = game.mana
 	game.tick(.1)
+	assert(is_equal_approx(game.mana, spent_mana + .05))
+	var recovered_mana: float = game.mana
 	game.reward_dungeon_clear_health()
-	assert(game.mana == spent_mana)
+	assert(game.mana == recovered_mana)
 	for index in game.companions.size():
 		var ally = game.companions[index]
 		var attributes: Dictionary = entry.party[index + 1].attributes

@@ -6,6 +6,8 @@ signal bolt_hit(enemy, damage: float, knock: Vector3)
 signal fire_patch(position: Vector3)
 signal impact(position: Vector3, reason: String)
 signal damage_hit(enemy, damage: float, knock: Vector3, element: String)
+signal sword_wave_hit(enemy, damage: float, knock: Vector3, kind: String)
+signal vacuum_wake_segment(from: Vector3, to: Vector3)
 signal impact_element(position: Vector3, reason: String, element: String)
 signal area_impact(position: Vector3, radius: float, element: String)
 
@@ -48,6 +50,10 @@ func spawn_fireball(where: Vector3, direction: Vector3, definition: Dictionary, 
 	var visual_path := "res://scripts/bullet_visual.gd" if physical else "res://scripts/fireball_visual.gd"
 	if physical and definition.get("projectile_visual", "") == "rifle":
 		visual_path = "res://scripts/rifle_bullet_visual.gd"
+	if physical and definition.get("projectile_visual", "") == "sword_wave":
+		visual_path = "res://scripts/sword_wave_visual.gd"
+	if physical and definition.get("projectile_visual", "") == "vacuum_wave":
+		visual_path = "res://scripts/vacuum_wave_visual.gd"
 	if physical and definition.get("projectile_visual") in ["arrow", "bolt"]:
 		var arrow := Sprite3D.new()
 		arrow.texture = CrossbowArt.bolt_texture() if definition.projectile_visual == "bolt" else BowArt.arrow_texture()
@@ -63,10 +69,12 @@ func spawn_fireball(where: Vector3, direction: Vector3, definition: Dictionary, 
 	add_child(node)
 	node.global_position = where
 	active.append({"node": node, "origin": where, "direction": ground, "damage": damage,
+		"sword_wave": String(definition.get("projectile_visual", "")) if physical and definition.get("projectile_visual", "") in ["sword_wave", "vacuum_wave"] else "",
 		"element": element, "travelled": 0.0, "max_range": max_range, "speed": speed,
 		"bolt":definition.get("projectile_visual", "") == "bolt", "rifle":definition.get("projectile_visual","")=="rifle","rifle_aimed":bool(definition.get("rifle_aimed",false)),"max_targets":int(definition.get("max_targets",0)),
 		"radius": radius, "age": 0.0, "knockback": knockback,"ground_fire":bool(definition.get("ground_fire",false)) and not physical,
 		"launch_origin": launch_origin, "launch_pending": true,
+		"wake_ground_y": definition.get("wake_ground_y", launch_origin.y - 0.75),
 		"pierce_after_exit": pierce_after_exit, "pierce_started": false, "hitids": [],
 		"splash_radius": splash_radius, "splash_damage": splash_damage})
 	shots_fired += 1
@@ -80,7 +88,7 @@ func tick(delta: float, enemies: Array, world: World3D, on_hit: Callable, camera
 		if not is_instance_valid(entry.node):
 			active.erase(entry)
 			continue
-		if entry.pierce_after_exit > 0.0:
+		if entry.pierce_after_exit > 0.0 or entry.sword_wave == "vacuum_wave":
 			_tick_piercing(entry, delta, enemies, world, on_hit, camera)
 			continue
 		# The visible tip may already be beyond a close monster or a thin wall.
@@ -164,18 +172,16 @@ func _sweep_piercing(entry: Dictionary, start: Vector3, end: Vector3, enemies: A
 				sweep_end = cursor.lerp(end, fraction)
 		var contact := _first_contact(cursor, sweep_end, entry.radius, enemies, world, entry.hitids)
 		if contact.is_empty():
-			entry.node.global_position = sweep_end
-			entry.travelled = clampf((sweep_end - entry.origin).dot(entry.direction), 0.0, entry.max_range)
+			_advance_piercing_position(entry, cursor, sweep_end)
 			if reaches_cutoff:
 				_finish(entry, sweep_end, "pierce_limit", null, on_hit, enemies, world)
 				return true
 			return false
-		entry.node.global_position = contact.position
-		entry.travelled = clampf((contact.position - entry.origin).dot(entry.direction), 0.0, entry.max_range)
+		_advance_piercing_position(entry, cursor, contact.position)
 		if contact.reason == "cover":
 			_finish(entry, contact.position, "cover", null, on_hit, enemies, world)
 			return true
-		if not entry.pierce_started:
+		if entry.pierce_after_exit > 0.0 and not entry.pierce_started:
 			# Capture the far root before damage callbacks can move or kill the target.
 			var ground := Vector3(end.x - start.x, 0.0, end.z - start.z).normalized()
 			var cutoff: Vector3 = contact.exit_position + ground * entry.pierce_after_exit
@@ -190,6 +196,18 @@ func _sweep_piercing(entry: Dictionary, start: Vector3, end: Vector3, enemies: A
 			_finish(entry,contact.position,"hit_limit",null,on_hit,enemies,world);return true
 		cursor = contact.position
 	return not active.has(entry)
+
+func _advance_piercing_position(entry: Dictionary, from: Vector3, to: Vector3) -> void:
+	entry.node.global_position = to
+	entry.travelled = clampf((to - entry.origin).dot(entry.direction), 0.0, entry.max_range)
+	if entry.sword_wave == "vacuum_wave" and not from.is_equal_approx(to):
+		var base: Vector3 = entry.node.ground_anchor(to, entry.direction, entry.radius, entry.wake_ground_y)
+		var start := base - (to - from)
+		var launch: Vector3 = entry.launch_origin
+		launch.y = base.y
+		if (base - launch).dot(entry.direction) > CONTACT_EPSILON:
+			if (start - launch).dot(entry.direction) < 0.0: start = launch
+			vacuum_wake_segment.emit(start, base)
 
 func _first_contact(start: Vector3, end: Vector3, radius: float, enemies: Array, world: World3D, ignored_ids: Array = []) -> Dictionary:
 	var result: Dictionary = {}
@@ -257,7 +275,8 @@ func _emit_enemy_contact(entry: Dictionary, position: Vector3, enemy, on_hit: Ca
 		if not active.has(entry):return
 		impact.emit(position,"enemy");impact_element.emit(position,"enemy",entry.element);return
 	if on_hit.is_valid(): on_hit.call(enemy, entry.damage, entry.direction * entry.knockback)
-	damage_hit.emit(enemy, entry.damage, entry.direction * entry.knockback, entry.element)
+	if not entry.sword_wave.is_empty(): sword_wave_hit.emit(enemy, entry.damage, entry.direction * entry.knockback, entry.sword_wave)
+	else: damage_hit.emit(enemy, entry.damage, entry.direction * entry.knockback, entry.element)
 	impact.emit(position, "enemy")
 	impact_element.emit(position, "enemy", entry.element)
 
@@ -275,7 +294,7 @@ func _finish(entry: Dictionary, position: Vector3, reason: String, enemy, on_hit
 	if detonate:
 		record["splash_radius"] = entry.splash_radius
 		record["splash_hitids"] = []
-	if entry.pierce_after_exit > 0.0:
+	if entry.pierce_after_exit > 0.0 or entry.sword_wave == "vacuum_wave":
 		record["hitids"] = entry.hitids.duplicate()
 		if entry.pierce_started:
 			record["pierce_cutoff"] = entry.pierce_cutoff
@@ -288,6 +307,7 @@ func _finish(entry: Dictionary, position: Vector3, reason: String, enemy, on_hit
 		if detonate and generation != _clear_generation: return
 		if entry.rifle:rifle_hit.emit(enemy,entry.damage,entry.direction*entry.knockback)
 		elif entry.bolt:bolt_hit.emit(enemy, entry.damage, entry.direction * entry.knockback)
+		elif not entry.sword_wave.is_empty(): sword_wave_hit.emit(enemy, entry.damage, entry.direction * entry.knockback, entry.sword_wave)
 		else:damage_hit.emit(enemy, entry.damage, entry.direction * entry.knockback, entry.element)
 		if detonate and generation != _clear_generation: return
 	if detonate:
@@ -352,4 +372,5 @@ func _update_visual(entry: Dictionary, camera: Camera3D) -> void:
 		arrow.scale.x = maxf(0.35, projection.length())
 	elif is_instance_valid(camera) and entry.node.has_method("update_visual"):
 		if entry.node.has_method("configure_contact"):entry.node.configure_contact(entry.radius)
+		if entry.sword_wave == "vacuum_wave": entry.node.configure_ground(entry.wake_ground_y)
 		entry.node.update_visual(camera, entry.direction, entry.age)

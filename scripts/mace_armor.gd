@@ -6,8 +6,8 @@ const DURATION:=10.0
 const BROKEN_MULTIPLIER:=1.10
 var stacks:=0
 var remaining:=.0
-func add() -> void:
- stacks=mini(MAX_STACKS,stacks+1);remaining=DURATION
+func add(amount: int = 1, fill: bool = false) -> void:
+ stacks=MAX_STACKS if fill else mini(MAX_STACKS,stacks+amount);remaining=DURATION
 func advance(delta: float) -> void:
  if not is_finite(delta) or delta<=0:return
  remaining=maxf(0,remaining-delta)

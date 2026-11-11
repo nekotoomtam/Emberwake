@@ -53,14 +53,15 @@ func run() -> void:
   var before: float=game.total_damage;var energy: float=game.stamina;await attack()
   close(game.total_damage-before,expected[stage],"firstcombo oldbase damage")
   close(game.stamina,energy-[12,8,18][stage],"originalcost")
-  close(enemy.mace_armor.stacks,1 if stage==2 else 0,"only actualthird gainsstack")
- for count in range(2,6):
+  close(enemy.mace_armor.stacks,0,"basic mace attacks add no armor stacks")
+ for combo in range(2):
   game.stamina=100
   for stage in range(3):
    var before: float=game.total_damage
-   var multiplier: float=100/enemy.effective_armor()*enemy.mace_armor.physical_multiplier()
-   await attack();close(game.total_damage-before,expected[stage]*multiplier,"eachhit uses prehitstack fifthnotretroactive")
-  close(enemy.mace_armor.stacks,count,"natural threehit combos stack once each")
+   await attack();close(game.total_damage-before,expected[stage],"repeat combos deal ordinary damage")
+  close(enemy.effective_armor(),100,"repeat combos leave armor intact")
+  close(enemy.mace_armor.remaining,0,"repeat combos leave the armor debuff inactive")
+ for count in range(5):enemy.apply_mace_break()
  check(not game.ui.mace_status_panel.visible and enemy.mace_armor.broken() and is_instance_valid(game.status_icons) and not enemy.armor_badge.visible,"fullstack status uses icon instead of long HUD")
  close(enemy.calculate_incoming_damage(20,"physical"),44,"fullstack physical baseline2.2x for neutral100armor")
  game.set_weapon_family("sword");close(enemy.mace_armor.stacks,5,"weaponfamily switch preserves targetstatus")
@@ -74,16 +75,13 @@ func run() -> void:
  enemy=fresh();await attack();await attack();game.stamina=100;check(game.request_attack(),"third windup starts");check(game.request_dodge(Vector3.LEFT),"dodge cuts third");await step(.8);close(enemy.mace_armor.stacks,0,"canceled third cannotapply")
  enemy=fresh();enemy.health=1;game._next_combo=2;game.rewards.combo_left=.7;await attack();check(enemy.dead and enemy.mace_armor.stacks==0,"lethal third never leaves status")
  enemy=fresh();await attack();await attack();game.stamina=100;game.request_attack()
+ var fracture_seen := false
  for i in range(120):
   await step(1.0/120)
-  if enemy.mace_armor.stacks>0:break
- var fracture={}
- for entry in game.fx.trails:
-  if is_equal_approx(entry.total,.28):fracture=entry
- check(not fracture.is_empty() and fracture.get("sight_point",Vector3.INF)==enemy.position,"fracture carries actual target visibility point")
- game.test_aim=Vector3.LEFT;game._refresh_aim();game._visual_tick(0)
- if not fracture.is_empty():check(not fracture.node.visible,"fracture disappears immediately when hidden")
- check(not game.ui.mace_status_panel.visible,"HUD conceals hidden debuffed target")
+  for entry in game.fx.trails:
+   if is_equal_approx(entry.total,.28):fracture_seen=true
+  if not game.motion.busy:break
+ check(not fracture_seen,"ordinary third strike does not show an armor fracture effect")
  game.start_run(true);check(game.enemies[0].mace_armor.stacks==0,"newrun freshstatus")
  game.queue_free();await process_frame
  print("MACE ARMOR: ",checks," checks; ","PASS" if failures.is_empty() else "FAIL",failures);quit(0 if failures.is_empty() else 1)

@@ -41,6 +41,7 @@ func _ready() -> void:
 	var header := HBoxContainer.new();column.add_child(header)
 	var heading := text("คลังอาวุธ / ชุดที่ 1 และ 2",27);heading.size_flags_horizontal=Control.SIZE_EXPAND_FILL;header.add_child(heading)
 	var close := Button.new();close.text="กลับไปเล่น [I / ESC]";close.pressed.connect(func():game.toggle_inventory());header.add_child(close)
+	var skills := Button.new();skills.text="สกิลดาบ [K]";skills.pressed.connect(func():game.toggle_sword_skills());header.add_child(skills)
 	column.add_child(text("ลากของลงช่อง หรือคลิกของแล้วคลิกช่อง • คลิกขวาที่ช่องเพื่อถอด",16))
 	var row := HBoxContainer.new();row.add_theme_constant_override("separation",32);column.add_child(row)
 	var bag_column := VBoxContainer.new();row.add_child(bag_column);bag_column.add_child(text("ช่องเก็บของ   20 ช่อง",20))
@@ -85,7 +86,7 @@ func refresh() -> void:
 	status.text=model.message
 
 func details(family: String) -> String:
-	return {"sword":"ฟัน 18 / 19 / 34 • F ฟันคู่ • E เจาะเกราะ", "mace":"ฟาดขึ้น → พุ่งกระแทก → ฟาดลง", "pistol":"ยิงทีละนัด • 18 ดาเมจ • 10 นัด • รีโหลด 0.5 วิ", "greatsword":"กวาดข้างสองที → ฟาดลง • ใช้ทั้งสองมือ", "staff":"ลูกไฟ 72 ดาเมจ • ระเบิด 36 รอบจุดกระทบ", "shield":"คลิกขวาค้างกางโล่ • รับแรงด้วยสแตมิน่า • ลดดาเมจด้านหน้า 55%", "crossbow":"R ขึ้นลำ • คลิกซ้ายยิง • แผลลึกทำดาเมจต่อเนื่อง", "bow":"ค้างคลิกซ้ายชาร์จ 3 ขั้น • ปล่อยขั้นเต็มแล้วถอย", "rifle":"49.5 ดาเมจ • 5 นัด • แรงถอยหลัง • ทะลุระยะสั้น"}.get(family,"")
+	return {"sword":"ฟัน 18 / 19 / 34 • 1 / 2 / 3 ใช้สกิล • K จัดสกิล", "mace":"ฟาดขึ้น → พุ่งกระแทก → ฟาดลง", "pistol":"ยิงทีละนัด • 18 ดาเมจ • 10 นัด • รีโหลด 0.5 วิ", "greatsword":"กวาดข้างสองที → ฟาดลง • ใช้ทั้งสองมือ", "staff":"ลูกไฟ 72 ดาเมจ • ระเบิด 36 รอบจุดกระทบ", "shield":"คลิกขวาค้างกางโล่ • รับแรงด้วยสแตมิน่า • ลดดาเมจด้านหน้า 55%", "crossbow":"R ขึ้นลำ • คลิกซ้ายยิง • แผลลึกทำดาเมจต่อเนื่อง", "bow":"ค้างคลิกซ้ายชาร์จ 3 ขั้น • ปล่อยขั้นเต็มแล้วถอย", "rifle":"49.5 ดาเมจ • 5 นัด • แรงถอยหลัง • ทะลุระยะสั้น"}.get(family,"")
 
 func clicked(location: Dictionary) -> void:
 	if not selected.is_empty() and selected!=location:
