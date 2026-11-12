@@ -36,7 +36,7 @@ func run() -> void:
  fresh("sword0");g.set_body_integrity("left_leg",55);g.set_body_integrity("right_leg",55);g.request_dodge(Vector3.RIGHT);close(g.stamina,62.5,"twoinjuredlegs cost once25percent")
  fresh("sword0");g.set_body_integrity("left_leg",55);g.set_body_integrity("torso",55);g.request_dodge(Vector3.RIGHT);close(g.stamina,55,"leg torso dash45")
  fresh("pistol0");g.set_body_integrity("torso",55);g.request_attack();close(g.stamina,96.4,"torso attackcost20percent")
- fresh("pistol0");g.incoming_attack(10,g.player.position+Vector3.RIGHT,true,null,1,"right_arm");close(g.anatomy.part_hp("right_arm"),23,"bodydamage20percent rawHP");close(g.health,90,"HPdamageindependent")
+ fresh("pistol0");g.incoming_attack(10,g.player.position+Vector3.RIGHT,true,null,1,"right_arm");close(g.anatomy.part_hp("right_arm"),25,"incoming hit leaves the arm untouched");close(g.health,90,"damage goes to overall HP")
  fresh("pistol0");g.health=10;var e:=InputEventKey.new();e.physical_keycode=KEY_F;e.pressed=true;root.push_input(e,true);close(g.health,35,"actualF instant25");check(g.flasks.charges==2,"onecharge");advance(1);close(g.health,40,"one second5");advance(4);close(g.health,60,"total50 over5");close(g.anatomy.integrity.right_upper_arm,100,"potion not bodyheal")
  g.health=100;check(not g.use_health_flask() and g.flasks.charges==2,"fullhealth no waste")
  g.health=10;g.use_health_flask();g.toggle_pause();advance(2);close(g.health,35,"pausedHoT frozen");g.toggle_pause();advance(1);close(g.health,40,"resumeHoT");g.toggle_body_lab();advance(2);close(g.health,40,"labHoT frozen");g.toggle_body_lab()

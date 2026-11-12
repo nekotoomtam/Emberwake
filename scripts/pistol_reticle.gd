@@ -9,6 +9,8 @@ func update_view(game) -> void:
  visible=game.primary_family() in ["pistol","rifle"] and game.mode in ["practice","combat"] and not game.inventory_open and not game.stats_open
  if not visible:return
  center=game._mouse_position
+ var locked: Vector2 = game.locked_rifle_reticle()
+ if locked.is_finite(): center = locked
  if game.test_aim.length_squared()>.001:center=game.camera.unproject_position(game.player.position+game.test_aim.normalized()*5)
  radius=maxf(8,4+3*rad_to_deg(game.gun_spread(game.primary_family(),game.right_action()=="aim")))
  drawer.queue_redraw()

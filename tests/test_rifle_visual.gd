@@ -50,6 +50,17 @@ func _test_art() -> void:
 	var connected := true
 	for x in range(26, 123): connected = connected and image.get_pixel(x, 22).a > 0.0
 	_check(connected, "hand, receiver and muzzle are one continuous rigid silhouette")
+	var side := rifle_art.texture(false).get_image() as Image
+	var side_pixels := side.get_data()
+	for rear: bool in [false, true]:
+		var view: Texture2D = rifle_art.end_view(rear)
+		var end := view.get_image()
+		_check(view == rifle_art.end_view(rear) and view.get_size() == texture.get_size(), "end view reuses the rifle's canvas and cache")
+		_check(end.get_pixel(26, 22).a == 1.0 and end.get_pixel(122, 22).a == 1.0, "end view retains the grip and muzzle anchors")
+		_check(end.get_pixel(85, 21).is_equal_approx(side.get_pixel(85, 21)), "barrel band stays at the same position and color in every view")
+		_check(end.get_pixel(16, 24).is_equal_approx(side.get_pixel(16, 24)), "end view keeps the same wooden stock")
+	_check(rifle_art.end_view(false) != rifle_art.end_view(true), "front muzzle and rear stock have separate drawings")
+	_check(rifle_art.texture(false).get_image().get_data() == side_pixels, "end views leave the original side art intact")
 	geometry.pivot = Vector2.ZERO
 	_check(rifle_art.geometry().pivot == Vector2(26, 22), "callers cannot mutate cached rifle geometry")
 

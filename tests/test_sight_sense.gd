@@ -76,6 +76,7 @@ func run() -> void:
   var angle:=deg_to_rad(float(degrees))
   check(game.vision.in_cone(origin+Vector3(cos(angle),0,sin(angle))*3)==(abs(degrees)<=75),"dungeon cone boundary "+str(degrees))
  check(game.vision.in_cone(origin+Vector3.RIGHT*15) and not game.vision.in_cone(origin+Vector3.RIGHT*15.05),"dungeon range boundary")
+ game.vision.update_view(0)
  check(is_equal_approx(float(game.vision.material.get_shader_parameter("sight_range")),15),"fog uses dungeon range")
  check(is_equal_approx(float(game.vision.material.get_shader_parameter("cone_cos")),cos(deg_to_rad(75))),"fog uses dungeon cone")
  wall(origin+Vector3(4,1,0));await refresh()

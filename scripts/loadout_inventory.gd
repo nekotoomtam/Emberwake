@@ -1,14 +1,19 @@
 extends RefCounted
 signal changed
 const MaceSkills = preload("res://scripts/mace_skill_motion.gd")
+const RifleSkills = preload("res://scripts/rifle_motion.gd")
+const StaffSkills = preload("res://scripts/staff_motion.gd")
+const SwordMotion = preload("res://scripts/sword_motion.gd")
 const CAPACITY := 20
 const FAMILIES := ["sword", "mace", "pistol", "greatsword", "staff", "rifle", "bow", "crossbow", "shield"]
-const NAMES := {"sword":"ดาบมือเดียว", "mace":"กระบอง", "pistol":"ปืนพก", "greatsword":"ดาบใหญ่", "staff":"คทาไฟ", "rifle":"ปืนยาว", "bow":"ธนู", "crossbow":"หน้าไม้", "shield":"โล่"}
+const NAMES := {"sword":"ดาบมือเดียว", "mace":"กระบอง", "pistol":"ปืนพก", "greatsword":"ดาบใหญ่", "staff":"คทาธาตุ", "rifle":"ปืนยาว", "bow":"ธนู", "crossbow":"หน้าไม้", "shield":"โล่"}
 const TWO_HAND := ["greatsword", "staff", "rifle", "bow", "crossbow"]
 const SKILL_IDS := ["impaling_thrust", "double_slash", "square_off", "sword_dance", "spinning_slash", "storm_blade", "stormcaller", "vacuum_slice"]
 const DEFAULT_SKILLS := ["impaling_thrust", "double_slash", "spinning_slash"]
 var skill_slots: Array = DEFAULT_SKILLS.duplicate()
 var mace_skill_slots: Array = MaceSkills.DEFAULT_SLOTS.duplicate()
+var rifle_skill_slots: Array = RifleSkills.DEFAULT_SLOTS.duplicate()
+var staff_skill_slots: Array = StaffSkills.DEFAULT_SLOTS.duplicate()
 var items: Dictionary = {}
 var bag: Array = []
 var sets: Array = []
@@ -29,6 +34,10 @@ func defaults() -> void:
 		for copy in range(2):
 			var id := family + str(copy)
 			items[id] = {"family":family, "name":NAMES[family], "two_hand":family in TWO_HAND}
+			if family == "rifle": items[id].rifle_stats = RifleSkills.DEFAULT_WEAPON_STATS.duplicate()
+			if family == "staff": items[id].staff_power = StaffSkills.BASE_WEAPON_POWER
+			if family == "sword": items[id].sword_power = SwordMotion.BASE_WEAPON_POWER
+			if family == "mace": items[id].mace_power = MaceSkills.BASE_WEAPON_POWER
 			bag[index] = id
 			index += 1
 	sets = [{"main":"sword0", "off":"pistol0"}, {"main":"greatsword0", "off":""}]
@@ -36,13 +45,25 @@ func defaults() -> void:
 	active = 0
 	skill_slots = DEFAULT_SKILLS.duplicate()
 	mace_skill_slots = MaceSkills.DEFAULT_SLOTS.duplicate()
+	rifle_skill_slots = RifleSkills.DEFAULT_SLOTS.duplicate()
+	staff_skill_slots = StaffSkills.DEFAULT_SLOTS.duplicate()
+
+func slots_for_family(family: String) -> Array:
+	match family:
+		"mace": return mace_skill_slots
+		"rifle": return rifle_skill_slots
+		"staff": return staff_skill_slots
+		_: return skill_slots
 
 func equip_skill(slot: int, id: String) -> bool:
 	var is_mace := MaceSkills.SKILLS.has(id)
-	if slot < 0 or slot >= 3 or (id not in SKILL_IDS and not is_mace):
+	var is_rifle := RifleSkills.SKILLS.has(id)
+	var is_staff := StaffSkills.SKILLS.has(id)
+	if slot < 0 or slot >= 3 or (id not in SKILL_IDS and not is_mace and not is_rifle and not is_staff):
 		message = "ช่องสกิลหรือสกิลไม่ถูกต้อง"
 		return false
-	var slots := mace_skill_slots if is_mace else skill_slots
+	var slots := rifle_skill_slots if is_rifle else (mace_skill_slots if is_mace else skill_slots)
+	if is_staff: slots = staff_skill_slots
 	if slots[slot] == id: return true
 	var before := slots.duplicate()
 	var occupied := slots.find(id)
@@ -160,7 +181,7 @@ func save_data() -> bool:
 	if save_path == "": return true
 	var file := FileAccess.open(save_path + ".tmp", FileAccess.WRITE)
 	if file == null: return false
-	file.store_string(JSON.stringify({"version":5, "bag":bag, "sets":sets, "active":active, "skill_slots":skill_slots, "mace_skill_slots":mace_skill_slots}))
+	file.store_string(JSON.stringify({"version":5, "bag":bag, "sets":sets, "active":active, "skill_slots":skill_slots, "mace_skill_slots":mace_skill_slots, "rifle_skill_slots":rifle_skill_slots, "staff_skill_slots":staff_skill_slots}))
 	file.close()
 	return DirAccess.rename_absolute(save_path + ".tmp", save_path) == OK
 
@@ -187,4 +208,6 @@ func load_data() -> bool:
 		return false
 	skill_slots = _sanitize_skills(data.get("skill_slots") if data.version == 5 else DEFAULT_SKILLS)
 	mace_skill_slots = _sanitize_skills(data.get("mace_skill_slots"), MaceSkills.DEFAULT_SLOTS, MaceSkills.SKILLS.keys())
+	rifle_skill_slots = _sanitize_skills(data.get("rifle_skill_slots"), RifleSkills.DEFAULT_SLOTS, RifleSkills.SKILLS.keys())
+	staff_skill_slots = _sanitize_skills(data.get("staff_skill_slots"), StaffSkills.DEFAULT_SLOTS, StaffSkills.SKILLS.keys())
 	return true

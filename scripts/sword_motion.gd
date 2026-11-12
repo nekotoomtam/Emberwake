@@ -7,16 +7,18 @@ const BLADE_LENGTH := 1.9
 const GRIP_HEIGHT := 0.68
 const REST_ANGLE := 0.35
 const REST_RADIUS := 0.3
+const BASE_WEAPON_POWER := 20.0
 const ATTACKS: Array[Dictionary] = [
-	{"windup": 0.13, "active": 0.11, "recovery": 0.18, "damage": 18.0, "reach": 2.1, "arc": 1.35},
-	{"windup": 0.14, "active": 0.12, "recovery": 0.20, "damage": 19.0, "reach": 2.2, "arc": 1.45},
-	{"windup": 0.25, "active": 0.16, "recovery": 0.28, "damage": 34.0, "reach": 2.55, "arc": 1.55},
+	{"windup": 0.13, "active": 0.11, "recovery": 0.18, "power_ratio": .90, "reach": 2.1, "arc": 1.35},
+	{"windup": 0.14, "active": 0.12, "recovery": 0.20, "power_ratio": .95, "reach": 2.2, "arc": 1.45},
+	{"windup": 0.25, "active": 0.16, "recovery": 0.28, "power_ratio": 1.70, "reach": 2.55, "arc": 1.55},
 ]
 
 var busy := false
 var stage := -1
 var elapsed := 0.0
 var aim_angle := 0.0
+var weapon_power := BASE_WEAPON_POWER
 var _locked_aim := 0.0
 var _entry_pose: Dictionary = {}
 var _held_pose: Dictionary = {}
@@ -33,7 +35,10 @@ func start(index: int, angle: float) -> bool:
 	return true
 
 func definition(index: int) -> Dictionary:
-	return {} if index < 0 or index >= ATTACKS.size() else ATTACKS[index].duplicate(true)
+	if index < 0 or index >= ATTACKS.size(): return {}
+	var attack := ATTACKS[index].duplicate()
+	attack.damage = weapon_power * float(attack.power_ratio)
+	return attack
 
 func advance(delta: float) -> Dictionary:
 	var angle: float = sample().angle

@@ -12,16 +12,23 @@ const LOW_HEALTH_FRACTION := .25
 const RETREAT_DURATION := 4.0
 const FOLLOW_RADIUS := 10.0
 const REVIVE_RANGE := 1.6
-const REVIVE_FRACTION := .30
+const Roster = preload("res://scripts/opening/expedition_roster.gd")
+const REVIVE_FRACTION := Roster.STAND_UP_HEALTH
 const RANGED_REACH := 7.5
 const DODGE_LOOKAHEAD := .27
 const DASH_SCAN_INTERVAL := .06
+const HIT_RADIUS := .30
+const HIT_HEIGHT := 1.75
+const PROJECTILE_LAYER := 16
 
 var avatar: Hero
 var motion = Motion.new()
 var stats = BaseStats.duplicate(true)
 var health := BaseStats.value("max_health")
 var downed := false
+var sanity := 0
+var lost := false
+var roster_id := ""
 var revive_marker: Label3D
 var target: Node3D
 var target_refresh_left := 0.0
@@ -44,14 +51,14 @@ var mana := BaseStats.value("max_mana")
 var energy := StaminaRules.new()
 
 func _ready() -> void:
-	collision_layer = 0
+	collision_layer = PROJECTILE_LAYER
 	collision_mask = 1
 	var collider := CollisionShape3D.new()
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = .30
-	capsule.height = 1.35
+	capsule.radius = HIT_RADIUS
+	capsule.height = HIT_HEIGHT
 	collider.shape = capsule
-	collider.position.y = .68
+	collider.position.y = HIT_HEIGHT * .5
 	add_child(collider)
 	avatar = Hero.new()
 	add_child(avatar)
@@ -70,7 +77,9 @@ func _ready() -> void:
 
 func configure(recruit: Dictionary, index: int) -> void:
 	slot = index
+	roster_id = recruit.get("roster_id", "")
 	stats.attributes = recruit.get("attributes", {}).duplicate()
+	stats.set_talents(recruit.get("talents", {}))
 	health = max_health()
 	stamina = stats.value("max_stamina")
 	mana = stats.value("max_mana")
@@ -107,33 +116,63 @@ func recall() -> void:
 func max_health() -> float:
 	return stats.value("max_health")
 
-func receive_hit(amount: float) -> void:
+func receive_hit(amount: float, element: String = "physical") -> void:
 	if downed or hurt_left > 0.0 or dash_left > Dash.DURATION - Rewards.DODGE_IFRAMES or amount <= 0.0: return
 	var low_health := max_health() * LOW_HEALTH_FRACTION
 	var was_above_low_health := health > low_health
-	health = maxf(0.0, health - amount)
 	hurt_left = .38
+	_lose_health(amount * stats.talent_factor("physical_taken") if element in ["", "physical"] else amount)
+	if not downed and was_above_low_health and health <= low_health:
+		recall()
+
+func receive_friendly_damage(amount: float) -> void:
+	if not downed and is_finite(amount) and amount > 0.0:
+		_lose_health(amount)
+
+func hurt_regions() -> Array:
+	return [{"id": "body", "position": global_position, "radius": HIT_RADIUS}]
+
+func projectile_hurt_regions(height: float) -> Array:
+	var local_height := height - global_position.y
+	if local_height < 0.0 or local_height > HIT_HEIGHT: return []
+	var cap_offset := maxf(0.0, absf(local_height - HIT_HEIGHT * .5) - (HIT_HEIGHT * .5 - HIT_RADIUS))
+	var radius := sqrt(maxf(0.0, HIT_RADIUS ** 2 - cap_offset ** 2))
+	return [{"id": "body", "position": global_position, "radius": radius}]
+
+func _lose_health(amount: float) -> void:
+	health = maxf(0.0, health - amount)
 	if health <= 0.0:
 		downed = true
+		lost = sanity >= Roster.FINAL_STAND_THRESHOLD
+		if lost and not roster_id.is_empty(): Roster.record_loss(roster_id)
 		dash_left = 0.0
 		velocity = Vector3.ZERO
 		motion.reset()
-	elif was_above_low_health and health <= low_health:
-		recall()
 
-func receive_forest_poison(amount: float, integrity_loss: float) -> void:
-	var previous := health
-	receive_hit(amount)
-	if health < previous: avatar.anatomy.reduce_all_integrity(integrity_loss)
+func receive_forest_poison(amount: float, _integrity_loss: float) -> void:
+	receive_hit(amount, "poison")
 
 
 func can_revive_from(origin: Vector3) -> bool:
-	return downed and origin.distance_squared_to(global_position) <= REVIVE_RANGE * REVIVE_RANGE and _line_clear(origin)
+	return downed and not lost and origin.distance_squared_to(global_position) <= REVIVE_RANGE * REVIVE_RANGE and _line_clear(origin)
+
+func revive_health_fraction() -> float:
+	return REVIVE_FRACTION + stats.talent("stand_up_health")
+
+func revive_sanity_cost() -> int:
+	return Roster.STAND_UP_SANITY + roundi(stats.talent("stand_up_sanity"))
+
+func _dash_cost() -> float:
+	return Rewards.DODGE_COST * stats.talent_factor("dash_cost")
+
+func _dash_speed() -> float:
+	return Rewards.DODGE_SPEED * stats.talent_factor("dash_distance")
 
 func revive() -> void:
-	if not downed: return
+	if not downed or lost: return
 	downed = false
-	health = max_health() * REVIVE_FRACTION
+	sanity += revive_sanity_cost()
+	health = max_health() * revive_health_fraction()
 	hurt_left = .75
 	retreat_left = .75
 	cooldown = .35
@@ -147,17 +186,18 @@ func tick(delta: float, game) -> void:
 	cooldown = maxf(0.0, cooldown - delta)
 	dash_recharge = maxf(0.0, dash_recharge - delta)
 	stamina = energy.recover(stamina, delta, stats, dash_left > 0.0, false)
-	if dash_left <= 0.0 and dash_recharge <= 0.0 and stamina >= Rewards.DODGE_COST:
+	if dash_left <= 0.0 and dash_recharge <= 0.0 and stamina >= _dash_cost():
 		dash_scan_left -= delta
 		if dash_scan_left <= 0.0:
 			dash_scan_left = DASH_SCAN_INTERVAL
 			_try_dodge(game)
 	if dash_left > 0.0:
-		_move(dash_direction * Rewards.DODGE_SPEED, minf(delta, dash_left), game)
+		_move(dash_direction * _dash_speed(), minf(delta, dash_left), game)
 		dash_left = maxf(0.0, dash_left - delta)
 		return
 	if motion.busy:
-		var step: Dictionary = motion.advance(delta)
+		var melee_speed: float = 1.0 if ranged else stats.talent_factor("melee_speed")
+		var step: Dictionary = motion.advance(delta * stats.value("attack_speed") * melee_speed)
 		if step.get("projectile_ready", false) or (not ranged and step.get("damage_ready", step.get("entered_active", false))):
 			_commit_attack(game)
 		var step_toward := Vector3.ZERO
@@ -219,7 +259,7 @@ func tick(delta: float, game) -> void:
 		facing = Vector3(move.x, 0, move.z).normalized()
 	if move.length_squared() > .18:
 		var speed := 5.7 if recalling() or not can_engage else (3.7 if ranged else 4.8)
-		move = game.arena.steer_around_cover(global_position, move.normalized() * speed, move.length())
+		move = game.arena.steer_around_cover(global_position, move.normalized() * speed * stats.value("move_speed"), move.length())
 	else:
 		move = Vector3.ZERO
 	_move(move, delta, game)
@@ -242,14 +282,14 @@ func _try_dodge(game) -> void:
 	away = away.normalized() if away.length_squared() > .001 else -facing
 	for angle: float in [0.0, 45.0, -45.0, 90.0, -90.0, 135.0, -135.0, 180.0]:
 		var direction := away.rotated(Vector3.UP, deg_to_rad(angle))
-		var travel := direction * Rewards.DODGE_SPEED * Dash.DURATION
+		var travel := direction * _dash_speed() * Dash.DURATION
 		var destination := global_position + travel
 		if imminent.any(func(enemy: Node3D) -> bool: return _in_attack_zone(enemy, destination)): continue
 		if test_move(global_transform, travel, null, .001): continue
 		dash_left = Dash.DURATION
 		dash_recharge = Rewards.DODGE_RECHARGE
 		dash_direction = direction
-		stamina -= Rewards.DODGE_COST
+		stamina -= _dash_cost()
 		motion.reset()
 		attack_target = null
 		target_refresh_left = 0.0
@@ -268,7 +308,7 @@ func _choose_target(game, leader: Vector3) -> Node3D:
 	for enemy in game.enemies:
 		if not is_instance_valid(enemy) or enemy.dead: continue
 		var leader_distance := leader.distance_squared_to(enemy.global_position)
-		if leader_distance > FOLLOW_RADIUS * FOLLOW_RADIUS: continue
+		if leader_distance > (FOLLOW_RADIUS * stats.talent_factor("sight_range")) ** 2: continue
 		var score := global_position.distance_squared_to(enemy.global_position) + leader_distance * .15
 		if score >= best_score: continue
 		if not _line_clear(enemy.global_position): score += 24.0
@@ -293,17 +333,21 @@ func _commit_attack(game) -> void:
 	offset.y = 0
 	if ranged:
 		var direction := offset.normalized() if offset.length_squared() > .001 else facing
+		if family in ["pistol", "rifle"]:
+			var spread: float = deg_to_rad(2.0) * stats.talent_factor("spread")
+			direction = direction.rotated(Vector3.UP, game.shot_rng.randf_range(-spread, spread))
 		var origin := global_position + Vector3.UP * .83
-		var shot := {"damage": 13.0, "element": "fire" if family == "staff" else "physical",
+		var shot := {"damage": 13.0 * stats.range_damage(global_position, attack_target.global_position), "element": "fire" if family == "staff" else "physical",
 			"projectile_speed": 19.0, "projectile_range": 8.0, "projectile_radius": .12,
-			"knockback": .45, "launch_origin": origin}
+			"knockback": .45, "launch_origin": origin, "companion_shot": true}
 		if family in ["bow", "crossbow"]: shot.projectile_visual = "arrow" if family == "bow" else "bolt"
 		if game.staff_flight.spawn_fireball(origin + direction * .48, direction, shot, game.camera):
 			attacks_committed += 1
 			game.audio.play("fire_cast" if family == "staff" else ("equip" if family in ["bow","crossbow"] else "gun"))
 	elif offset.length() <= melee_reach + .2 and offset.dot(facing) >= -.08:
 		attacks_committed += 1
-		game.enemy_hit(attack_target, 13.0, facing * .65, "physical")
+		var damage: float = 13.0 * stats.talent_factor("melee_damage") * stats.range_damage(global_position, attack_target.global_position)
+		game.enemy_hit(attack_target, damage, facing * .65, "physical", -1.0, false, "", false)
 
 func _line_clear(to: Vector3) -> bool:
 	var ray := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * .7, to + Vector3.UP * .7, 1)
@@ -311,10 +355,12 @@ func _line_clear(to: Vector3) -> bool:
 
 func present(camera: Camera3D, delta: float, revive_available: bool) -> void:
 	var sample: Dictionary = motion.sample()
+	if family == "staff":
+		sample.staff_element = "fire"
 	var dodge := Dash.sample(dash_left, facing, dash_direction, camera)
 	avatar.update_pose(camera, facing, Vector2(velocity.x, velocity.z).length_squared() > .1,
 		sample, 2.1, hurt_left, dash_left, delta, downed, dodge)
 	avatar.set_equipment_visible(not downed)
 	avatar.update_cutout(null)
 	revive_marker.visible = downed
-	if downed: revive_marker.text = "[E ค้าง] ชุบ" if revive_available else "ล้มอยู่"
+	if downed: revive_marker.text = "สูญเสียแล้ว" if lost else ("[E ค้าง] ชุบ • สติ +%d" % revive_sanity_cost() if revive_available else "ล้มอยู่")

@@ -189,7 +189,7 @@ func _build_lab() -> void:
  consequences.custom_minimum_size.y=58
  column.add_child(consequences)
  column.add_child(_label("ศีรษะ 0% = ตาย • ลำตัว 0% ยังมีแกนชีวิต แต่ร่างกายอ่อนแรง",14,WARN))
- column.add_child(_label("ส่วนที่สูญเสีย: ใช้ปุ่มคืนส่วนที่เลือก • T เริ่มใหม่ ฟื้นร่างกายทั้งหมด",14))
+ column.add_child(_label("แขนหรือขาเหลือ 0% ยังใช้ได้ • เมื่อขาดจะเสียทั้งข้าง",14))
  var bottom:=HBoxContainer.new()
  bottom.add_theme_constant_override("separation",8)
  column.add_child(bottom)
@@ -264,7 +264,10 @@ func refresh() -> void:
  var selected_value: float=float(game.anatomy.integrity.get(selected,100.0))
  var selected_present: bool=bool(game.anatomy.present(selected))
  var status: String="ใช้งานได้" if game.anatomy.functional(selected) else "ใช้งานไม่ได้"
- if game.anatomy.functional(selected) and selected_value<=60:
+ if game.anatomy.limb_at_zero(selected):
+  var effect := "ตี / รีโหลด 85%" if selected.ends_with("arm") else "เดินช้าลง 10% ต่อข้าง • พลังงานแดช 125%"
+  status="บาดเจ็บหนัก • ยังใช้งานได้ • "+effect
+ elif game.anatomy.functional(selected) and selected_value<=60:
   var effects := {"head":"มองไกล 80%","torso":"ค่าพลังงาน 120%"}
   var limb_effect := "ตี / รีโหลด 90%" if selected.ends_with("arm") else "พลังงานแดช 125%"
   status="บาดเจ็บ: "+effects.get(selected,limb_effect)

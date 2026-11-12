@@ -2,11 +2,11 @@ extends RefCounted
 ## Slim one-hand blade drawn at the heroine's native world pixel size.
 ## The single hand, compact guard and blade form one rigid +X sprite.
 
-static var _texture_cache: Texture2D
+static var _texture_cache := {}
 
-static func texture() -> Texture2D:
-	if _texture_cache != null:
-		return _texture_cache
+static func texture(baked_hand: bool = true) -> Texture2D:
+	if _texture_cache.has(baked_hand):
+		return _texture_cache[baked_hand]
 	var image := Image.create(120, 28, false, Image.FORMAT_RGBA8)
 	image.fill(Color.TRANSPARENT)
 	var outline := Color("263141")
@@ -40,9 +40,10 @@ static func texture() -> Texture2D:
 	image.fill_rect(Rect2i(19, 5, 2, 2), gold)
 	image.fill_rect(Rect2i(23, 21, 2, 2), gold)
 	# Four native pixels match one of the heroine's logical skin clusters.
-	image.fill_rect(Rect2i(8, 12, 4, 4), Color("ffd4ad"))
-	_texture_cache = ImageTexture.create_from_image(image)
-	return _texture_cache
+	if baked_hand:
+		image.fill_rect(Rect2i(8, 12, 4, 4), Color("ffd4ad"))
+	_texture_cache[baked_hand] = ImageTexture.create_from_image(image)
+	return _texture_cache[baked_hand]
 
 static func geometry() -> Dictionary:
 	return {"pivot": Vector2(10, 14), "tip": Vector2(116, 14)}

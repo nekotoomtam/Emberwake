@@ -2,12 +2,14 @@ extends Node3D
 ## Cosmetic ground coverage for one real fire impact; advanced only by game tick.
 
 const LIFETIME := 0.40
+const ChargedFireArt = preload("res://scripts/staff_charged_fire_art.gd")
 var lifetime:=LIFETIME
 var age := 0.0
 var radius := 0.0
 var element := "fire"
 var _materials: Array[Dictionary] = []
 var _flames: Array[Dictionary] = []
+var _sprite: Sprite3D
 
 
 func configure(where: Vector3, coverage_radius: float, impact_element: String,duration: float=LIFETIME) -> void:
@@ -30,6 +32,19 @@ func configure(where: Vector3, coverage_radius: float, impact_element: String,du
 	_flame(Vector3(0, .17, 0), .13, .43, Color("#fff1a5"), 4)
 	_update()
 
+func configure_charged_fire(where: Vector3, coverage_radius: float, camera: Camera3D) -> void:
+	position = where + Vector3.UP * .045
+	radius = coverage_radius
+	_sprite = Sprite3D.new()
+	_sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_sprite.pixel_size = radius / 162.0
+	# Pull the billboard toward the camera along its sightline. The lower
+	# edge clears the ground mesh while the impact pivot stays in place onscreen.
+	_sprite.position = camera.global_basis.z * radius * .36
+	add_child(_sprite)
+	_update()
 
 func tick(delta: float) -> bool:
 	if not is_finite(delta) or delta <= 0: return age < lifetime
@@ -76,6 +91,12 @@ func _material(color: Color, opacity: float) -> StandardMaterial3D:
 
 func _update() -> void:
 	var progress := clampf(age / lifetime, 0, 1)
+	if _sprite != null:
+		var frame := mini(int(progress * ChargedFireArt.FRAME_COUNT), ChargedFireArt.FRAME_COUNT - 1)
+		_sprite.texture = ChargedFireArt.frame(ChargedFireArt.IMPACT, frame)
+		_sprite.offset = ChargedFireArt.offset_3d(ChargedFireArt.IMPACT, frame)
+		_sprite.modulate.a = 1.0 - smoothstep(.68, 1.0, progress)
+		return
 	var fade := (1.0 - progress) * (1.0 - progress * .35)
 	for entry: Dictionary in _materials:
 		entry.material.albedo_color = Color(entry.color, entry.opacity * fade)

@@ -26,6 +26,20 @@ uniform vec2 actor_dy=vec2(0.0,1.0);
 uniform vec2 weapon_origin;
 uniform vec2 weapon_dx=vec2(1.0,0.0);
 uniform vec2 weapon_dy=vec2(0.0,1.0);
+uniform sampler2D carry_mask : filter_nearest, repeat_disable;
+uniform float carry_enabled=0.0;
+uniform bool carry_flip=false;
+uniform bool carry_flip_v=false;
+uniform vec2 carry_origin;
+uniform vec2 carry_dx=vec2(1.0,0.0);
+uniform vec2 carry_dy=vec2(0.0,1.0);
+uniform sampler2D carry_off_mask : filter_nearest, repeat_disable;
+uniform float carry_off_enabled=0.0;
+uniform bool carry_off_flip=false;
+uniform bool carry_off_flip_v=false;
+uniform vec2 carry_off_origin;
+uniform vec2 carry_off_dx=vec2(1.0,0.0);
+uniform vec2 carry_off_dy=vec2(0.0,1.0);
 uniform sampler2D npc0_mask : filter_nearest, repeat_disable;
 uniform float npc0_enabled=0.0;
 uniform bool npc0_flip=false;
@@ -87,6 +101,14 @@ void fragment(){
  float actor_alpha=texture(actor_mask,vec2(actor_flip?1.0-auv.x:auv.x,auv.y)).a*in_mask(auv)*actor_enabled;
  float weapon_alpha=texture(weapon_mask,vec2(weapon_flip?1.0-wuv.x:wuv.x,wuv.y)).a*in_mask(wuv)*weapon_enabled;
  visible=max(visible,max(actor_alpha,weapon_alpha));
+ if(carry_enabled>0.0){
+  vec2 cuv=mask_uv(UV,carry_origin,carry_dx,carry_dy);
+  visible=max(visible,texture(carry_mask,vec2(carry_flip?1.0-cuv.x:cuv.x,carry_flip_v?1.0-cuv.y:cuv.y)).a*in_mask(cuv)*carry_enabled);
+ }
+ if(carry_off_enabled>0.0){
+  vec2 cuv=mask_uv(UV,carry_off_origin,carry_off_dx,carry_off_dy);
+  visible=max(visible,texture(carry_off_mask,vec2(carry_off_flip?1.0-cuv.x:cuv.x,carry_off_flip_v?1.0-cuv.y:cuv.y)).a*in_mask(cuv)*carry_off_enabled);
+ }
  vec2 n0=mask_uv(UV,npc0_origin,npc0_dx,npc0_dy);
  visible=max(visible,texture(npc0_mask,vec2(npc0_flip?1.0-n0.x:n0.x,n0.y)).a*in_mask(n0)*npc0_enabled);
  vec2 n1=mask_uv(UV,npc1_origin,npc1_dx,npc1_dy);

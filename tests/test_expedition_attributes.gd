@@ -1,4 +1,5 @@
 extends SceneTree
+const Talents = preload("res://scripts/character_talents.gd")
 
 func _initialize() -> void:
 	call_deferred("run")
@@ -8,7 +9,34 @@ func valid(attributes: Dictionary) -> bool:
 	return attributes.size() == 3 and attributes.values().min() == 3 and attributes.values().max() == 4 and attributes.values().reduce(func(total: int, value: int) -> int: return total + value, 0) == 10
 
 
+func check_talent_pool() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 185
+	var seen := {}
+	for index in 600:
+		var entries := Talents.roll_start(rng)
+		assert(entries.size() == 3)
+		var has_tradeoff := false
+		for id: int in entries:
+			seen[id] = true
+			has_tradeoff = has_tradeoff or (id >> 1) >= Talents.TRADEOFF_START
+			assert(not entries.has(id ^ 1) and entries[id] in [1, 2])
+		assert(has_tradeoff)
+	assert(seen.size() == 30)
+	var entries := {}
+	for id in range(0, 14, 2):
+		assert(Talents.grant(entries, id))
+	assert(not Talents.grant(entries, 14) and not Talents.grant(entries, 1))
+	assert(Talents.grant(entries, 0) and Talents.grant(entries, 0))
+	assert(entries[0] == 3 and entries.size() == 7 and not Talents.grant(entries, 0))
+	var bonuses := Talents.bonuses({0: 3, 17: 3, 24: 2})
+	assert(is_equal_approx(bonuses.attack_speed, .15))
+	assert(is_equal_approx(bonuses.skill_mana, -.12) and is_equal_approx(bonuses.skill_cooldown, .15))
+	assert(is_equal_approx(bonuses.near_damage, .10) and is_equal_approx(bonuses.far_damage, -.10))
+
+
 func run() -> void:
+	check_talent_pool()
 	var board = load("res://scripts/opening/boarding_party.gd").new()
 	root.add_child(board)
 	var first: Dictionary = board.recruits[0].get("attributes", {})
@@ -21,6 +49,8 @@ func run() -> void:
 	var rolls := {}
 	for recruit: Dictionary in board.recruits:
 		assert(valid(recruit.attributes))
+		assert(recruit.talents.size() == 3)
+		recruit.talents = {0: 2, 2: 1, 18: 1}
 	var stats = preload("res://data/player_base_stats.tres").duplicate(true)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 185
@@ -39,6 +69,11 @@ func run() -> void:
 	game.start_dungeon(185)
 	var leader: Dictionary = board.recruits[3].attributes
 	assert(game.stats.attributes == leader)
+	assert(game.stats.talents == board.recruits[3].talents)
+	assert(is_equal_approx(game.stats.value("attack_speed"), 1.10))
+	assert(is_equal_approx(game.flasks.healing_multiplier, 1.08))
+	assert(game._mace_skill_motion.configure("mace_gather", {}, 30.0, 3.0, game.stats.talent_factor("skill_area"), game.stats.talent_factor("area_windup")))
+	assert(is_equal_approx(game._mace_skill_motion.definition(0).area_radius, game.MaceSkillMotion.SKILLS.mace_gather.area_radius * 1.05))
 	assert(game.health == 100 + leader.strength * 3)
 	assert(game.stamina == 100 + leader.dexterity * 2)
 	if game.frenzy_threshold() != 200:
@@ -58,13 +93,21 @@ func run() -> void:
 		var ally = game.companions[index]
 		var attributes: Dictionary = entry.party[index + 1].attributes
 		assert(ally.stats.attributes == attributes)
+		assert(ally.stats.talents == entry.party[index + 1].talents)
 		assert(ally.health == 100 + attributes.strength * 3)
 		assert(ally.stamina == 100 + attributes.dexterity * 2)
 		assert(ally.mana == 100 + attributes.intelligence)
 		ally.downed = true
 		ally.revive()
-		assert(is_equal_approx(ally.health, ally.max_health() * .30))
+		assert(is_equal_approx(ally.health, ally.max_health() * .50) and ally.sanity == 40)
+	game.dungeon.cleared = game.TALENT_REWARD_ROOMS
+	game.reward_dungeon_clear_health()
+	assert(game.stats.talents.size() == 4 or game.stats.talents.values().reduce(func(total: int, rank: int): return total + rank, 0) == 5)
+	var awarded: Dictionary = game.stats.talents.duplicate()
+	game.reward_dungeon_clear_health()
+	assert(game.stats.talents == awarded)
 	game.start_dungeon(202)
+	assert(game.stats.talents == awarded)
 	assert(game.stats.attributes == leader)
 	assert(game.mana == game.stats.value("max_mana"))
 	game.stats_panel.refresh()

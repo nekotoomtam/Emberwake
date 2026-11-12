@@ -3,6 +3,8 @@ extends CanvasLayer
 signal confirmed(party: Array[Dictionary])
 signal cancelled
 
+const Talents = preload("res://scripts/character_talents.gd")
+const Roster = preload("res://scripts/opening/expedition_roster.gd")
 const CharacterStats = preload("res://scripts/character_stats.gd")
 const Flask = preload("res://scripts/health_flask.gd")
 const Stage = preload("res://scripts/opening/boarding_stage.gd")
@@ -17,7 +19,7 @@ const PROFILES := [
 	["ไอรา", "หมอสนาม", "ปืนพก", "pistol"],
 	["โรวาน", "ผู้คุ้มกัน", "กระบอง", "mace"],
 	["ไซลัส", "พลแม่นปืน", "ไรเฟิล", "rifle"],
-	["มีรา", "จอมเวท", "คทาไฟ", "staff"],
+	["มีรา", "จอมเวท", "คทาธาตุ", "staff"],
 ]
 
 class RecruitCard extends PanelContainer:
@@ -60,6 +62,7 @@ var deck_targets: Control
 var roster_view: VBoxContainer
 var gear_view: VBoxContainer
 var roster_tab: Button
+var depart_button: Button
 var gear_tab: Button
 var gear_title: Label
 var gear_position: Label
@@ -140,7 +143,7 @@ func _ready() -> void:
 	var roster_title := caption("ลากเข้าทีม", 18, PAPER)
 	roster_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	roster_header.add_child(roster_title)
-	roster_header.add_child(action("สุ่มหน้าตาใหม่", roll))
+	roster_header.add_child(action("สุ่มผู้สมัครใหม่", roll))
 	var gallery := GridContainer.new()
 	gallery.columns = 2
 	gallery.add_theme_constant_override("h_separation", 10)
@@ -169,7 +172,8 @@ func _ready() -> void:
 	page.add_child(status)
 	page.move_child(status, footer.get_index())
 	footer.add_child(action("กลับท่าเรือ", func(): cancelled.emit()))
-	footer.add_child(action("ออกเรือ  →", confirm, true))
+	depart_button = action("ออกเรือ  →", confirm, true)
+	footer.add_child(depart_button)
 	roll()
 	shade.modulate.a = 0
 	create_tween().tween_property(shade, "modulate:a", 1.0, .42).set_delay(.22)
@@ -178,11 +182,14 @@ func _ready() -> void:
 func roll() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
+	var talent_rng := RandomNumberGenerator.new()
+	talent_rng.randomize()
 	var attributes_rng := RandomNumberGenerator.new()
 	attributes_rng.seed = attribute_seed
 	var previous := recruits.duplicate()
 	recruits.clear()
 	var used: Dictionary = {}
+	var lost := Roster.losses()
 	for index in PROFILES.size():
 		var profile: Array = PROFILES[index]
 		var look: Dictionary
@@ -197,21 +204,30 @@ func roll() -> void:
 			look.top = previous[index].look.top
 			look.bottom = previous[index].look.bottom
 		var portrait: Texture2D = Look.frame(look, "front", "idle", 0).texture
-		recruits.append({"name": profile[0], "role": profile[1], "weapon_label": profile[2],
+		var roster_id := "harbor_recruit_%d" % index
+		recruits.append({"roster_id": roster_id, "lost": lost.has(roster_id), "name": profile[0], "role": profile[1], "weapon_label": profile[2],
 			"weapon": profile[3], "look": look, "portrait": portrait,
 			"attributes": CharacterStats.roll_level_one(attributes_rng),
+			"talents": Talents.roll_start(talent_rng),
 			"flasks": previous[index].flasks if index < previous.size() else Flask.RUN_CHARGES})
+	var available: Array[int] = []
+	for index in recruits.size():
+		if has_recruit(index) and index not in slots: available.append(index)
+	for index in slots.size():
+		if not has_recruit(slots[index]):
+			slots[index] = available.pop_front() if not available.is_empty() else -1
 	refresh_cards()
 
 
 func has_recruit(id: Variant) -> bool:
-	return id is int and id >= 0 and id < recruits.size()
+	return id is int and id >= 0 and id < recruits.size() and not bool(recruits[id].lost)
 
 
 func assign(recruit_id: int, slot: int) -> void:
 	if not has_recruit(recruit_id) or slot < 0 or slot >= slots.size() or slots[slot] == recruit_id:
 		return
 	var previous := slots.find(recruit_id)
+	if previous == 0 and not has_recruit(slots[slot]): return
 	if previous >= 0:
 		slots[previous] = slots[slot]
 	slots[slot] = recruit_id
@@ -222,10 +238,17 @@ func refresh_cards() -> void:
 	for index in slot_cards.size():
 		fill_stage_slot(index, slots[index])
 	for index in pool_cards.size():
+		pool_cards[index].visible = has_recruit(index)
+		if not pool_cards[index].visible: continue
 		var assigned := slots.find(index)
 		fill_card(pool_cards[index], index, POSITIONS[assigned] if assigned >= 0 else "ว่าง")
 	refresh_gear()
-	status.text = "พร้อมออกเรือ  3 / 3     •     คุม %s" % recruits[slots[0]].name
+	depart_button.disabled = not has_recruit(slots[0])
+	gear_tab.disabled = depart_button.disabled or gear_view.visible
+	if depart_button.disabled:
+		status.text = "ไม่มีผู้รอดชีวิตที่พร้อมออกเรือ"
+	else:
+		status.text = "พร้อมออกเรือ  %d / 3     •     คุม %s" % [slots.size() - slots.count(-1), recruits[slots[0]].name]
 
 
 func build_gear(parent: VBoxContainer) -> void:
@@ -281,6 +304,7 @@ func show_roster() -> void:
 
 
 func select_gear(slot: int) -> void:
+	if not has_recruit(slots[slot]): return
 	selected_slot = slot
 	roster_view.hide()
 	gear_view.show()
@@ -294,6 +318,8 @@ func update_tabs() -> void:
 
 
 func refresh_gear() -> void:
+	if not has_recruit(slots[selected_slot]): selected_slot = 0
+	if not has_recruit(slots[selected_slot]): return
 	var recruit := recruits[slots[selected_slot]]
 	gear_position.text = POSITIONS[selected_slot] + "  /  ของพก"
 	gear_title.text = "%s  ·  %s" % [recruit.name, recruit.role]
@@ -333,10 +359,11 @@ func change_outfit(part: String, index: int) -> void:
 
 
 func confirm() -> void:
-	if _departing:
+	if _departing or not has_recruit(slots[0]):
 		return
 	var party: Array[Dictionary] = []
 	for id in slots:
+		if not has_recruit(id): continue
 		party.append(recruits[id].duplicate(true))
 	confirmed.emit(party)
 
@@ -353,7 +380,7 @@ func set_departing(active: bool) -> void:
 		stage.bow_progress = 0.0
 		stage.bow_walk_elapsed = 0.0
 		for index in slots.size():
-			stage.set_portrait(index, Look.frame(recruits[slots[index]].look, "right", "idle", 0).texture)
+			fill_stage_slot(index, slots[index])
 
 
 func make_card(slot: int, minimum: Vector2) -> RecruitCard:
@@ -382,15 +409,24 @@ func sync_deck(world, camera: Camera3D) -> void:
 
 func clear_card(card: RecruitCard, id: int) -> void:
 	card.recruit_id = id
-	card.tooltip_text = "%s • %s" % [recruits[id].role, recruits[id].weapon_label]
+	card.tooltip_text = "%s • %s\n%s" % [recruits[id].role, recruits[id].weapon_label, Talents.summary(recruits[id].talents, true)]
 	for child in card.get_children():
 		card.remove_child(child)
 		child.queue_free()
 
 
 func fill_stage_slot(index: int, id: int) -> void:
-	stage.set_portrait(index, Look.frame(recruits[id].look, "right", "idle", 0).texture)
 	var card := slot_cards[index]
+	var occupied := has_recruit(id)
+	stage.set_portrait(index, Look.frame(recruits[id].look, "right", "idle", 0).texture if occupied else null)
+	stage.rings[index].visible = occupied and not _departing
+	if not occupied:
+		card.recruit_id = -1
+		card.tooltip_text = ""
+		for child in card.get_children():
+			card.remove_child(child)
+			child.queue_free()
+		return
 	clear_card(card, id)
 	card.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var bottom := CenterContainer.new()
@@ -428,10 +464,14 @@ func fill_card(card: RecruitCard, id: int, badge: String) -> void:
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(info)
-	info.add_child(caption(badge if assigned else "พร้อมเข้าทีม", 12, GOLD if assigned else MUTED))
-	info.add_child(caption(recruits[id].name, 19, PAPER))
-	info.add_child(caption(recruits[id].role, 14, MUTED))
-	info.add_child(caption(recruits[id].weapon_label, 13, MUTED))
+	info.add_theme_constant_override("separation", 0)
+	info.add_child(caption(recruits[id].name, 18, PAPER))
+	var subtitle: String = recruits[id].weapon_label
+	if assigned: subtitle += " · " + badge
+	info.add_child(caption(subtitle, 12, MUTED))
+	var talent_label := caption(Talents.summary(recruits[id].talents), 12, GOLD)
+	talent_label.add_theme_constant_override("line_spacing", 0)
+	info.add_child(talent_label)
 
 
 func make_preview(id: int) -> Control:

@@ -63,6 +63,10 @@ func sync(world, camera: Camera3D) -> void:
 	var height: float = world.ship.position.y + 2.865
 	for index in MARKS.size():
 		var at: Vector3 = MARKS[index]
+		if not departure_party.is_empty() and index >= departure_party.size():
+			figures[index].hide()
+			continue
+		figures[index].show()
 		if not departure_party.is_empty():
 			at = bow_walk_point(index, world.ship.position, bow_progress)
 			var from := bow_walk_point(index, world.ship.position, maxf(0.0, bow_progress - .01))

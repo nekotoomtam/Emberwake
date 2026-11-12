@@ -1,4 +1,9 @@
 extends Node3D
+const StaffIceVolleyArt = preload("res://scripts/staff_ice_volley_art.gd")
+const StaffLv10Art = preload("res://scripts/staff_lv10_art.gd")
+const StaffLv15Art = preload("res://scripts/staff_lv15_art.gd")
+const StaffLv20Art = preload("res://scripts/staff_lv20_art.gd")
+var _staff_breath_sprite: Sprite3D
 const ParryClash=preload("res://scripts/parry_clash_visual.gd")
 var clashes: Array[Node3D]=[]
 var visibility_test: Callable
@@ -12,6 +17,7 @@ const MaceSweepVisual = preload("res://scripts/mace_sweep_visual.gd")
 const MacePullVisual = preload("res://scripts/mace_pull_visual.gd")
 const MaceFireScoopVisual = preload("res://scripts/mace_fire_scoop_visual.gd")
 const MaceRiftVisual = preload("res://scripts/mace_rift_visual.gd")
+const RifleCartridgeArt = preload("res://scripts/rifle_cartridge_art.gd")
 const MaceLeapWaveVisual = preload("res://scripts/mace_leap_wave_visual.gd")
 const BasicSwordSlash = preload("res://scripts/basic_sword_slash.gd")
 const StormBladeCoat = preload("res://scripts/storm_blade_coat.gd")
@@ -265,6 +271,108 @@ func vacuum_wake_segment(from: Vector3, to: Vector3) -> void:
 	mark.global_position = from
 	trails.append({"node": mark, "life": 0.30, "total": 0.30, "color": Color.WHITE})
 
+func staff_lightning_arc(from: Vector3, to: Vector3) -> void:
+	if from.is_equal_approx(to):
+		burst(to, Color("#cfb2ff"), 7)
+		return
+	var side := from.direction_to(to).cross(Vector3.UP).normalized()
+	var points := PackedVector3Array([Vector3.ZERO])
+	for index in range(1, 5):
+		var shift := .15 if index % 2 == 0 else -.15
+		points.append((to - from) * (index / 5.0) + side * shift + Vector3.UP * shift)
+	points.append(to - from)
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	for band in [Vector2(.10, .35), Vector2(.027, .95)]:
+		mesh.surface_set_color(Color("#a275ff", band.y) if band.x > .05 else Color("#f3e6ff", band.y))
+		for index in range(points.size() - 1):
+			var start := points[index]
+			var end := points[index + 1]
+			var edge: Vector3 = side * band.x
+			for point in [start - edge, start + edge, end + edge, start - edge, end + edge, end - edge]:
+				mesh.surface_add_vertex(point)
+	mesh.surface_end()
+	var arc := MeshInstance3D.new()
+	arc.mesh = mesh
+	arc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var material := tint(Color.WHITE)
+	material.no_depth_test = false
+	material.vertex_color_use_as_albedo = true
+	arc.material_override = material
+	add_child(arc)
+	arc.global_position = from
+	trails.append({"node": arc, "life": .2, "total": .2, "color": Color.WHITE})
+	burst(to, Color("#cfb2ff"), 7)
+
+func staff_fire_breath(muzzle: Vector3, origin: Vector3, angle: float, half_angle: float, reach: float, camera: Camera3D, elapsed: float) -> void:
+	var space := get_world_3d().direct_space_state
+	var base := Vector3(origin.x, muzzle.y, origin.z)
+	var muzzle_ray := PhysicsRayQueryParameters3D.create(base, muzzle, 1)
+	muzzle_ray.hit_from_inside = true
+	if not space.intersect_ray(muzzle_ray).is_empty():
+		hide_staff_fire_breath()
+		return
+	var direction := Vector3(cos(angle), 0, sin(angle))
+	var end := base + direction * reach
+	var query := PhysicsRayQueryParameters3D.create(muzzle, end, 1)
+	query.hit_from_inside = true
+	var cover := space.intersect_ray(query)
+	if not cover.is_empty(): end = cover.position
+	var path := end - muzzle
+	var projected := Vector2(camera.global_basis.x.dot(path), camera.global_basis.y.dot(path))
+	if projected.length_squared() < .0025:
+		hide_staff_fire_breath()
+		return
+	if not is_instance_valid(_staff_breath_sprite):
+		_staff_breath_sprite = Sprite3D.new()
+		_staff_breath_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		_staff_breath_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_staff_breath_sprite.pixel_size = 1.0
+		add_child(_staff_breath_sprite)
+	var frame := int(elapsed * 18.0) % StaffLv10Art.FRAME_COUNT
+	var length := projected.length() / StaffLv10Art.BREATH_LENGTH
+	var width := minf(path.length() * .88, tan(half_angle) * reach) / StaffLv10Art.BREATH_WIDTH
+	_staff_breath_sprite.texture = StaffLv10Art.breath_frame(frame)
+	_staff_breath_sprite.offset = StaffLv10Art.breath_offset(frame)
+	_staff_breath_sprite.global_transform = Transform3D(camera.global_basis * Basis(Vector3.BACK, projected.angle()) * Basis.from_scale(Vector3(length, width, 1)), muzzle)
+	_staff_breath_sprite.show()
+
+func hide_staff_fire_breath() -> void:
+	if is_instance_valid(_staff_breath_sprite): _staff_breath_sprite.hide()
+
+func staff_ice_volley_contact(at: Vector3) -> void:
+	_staff_spell_contact(at, StaffIceVolleyArt, .0055)
+
+func staff_chain_lightning_contact(at: Vector3) -> void:
+	_staff_spell_contact(at, StaffLv10Art, .0048)
+
+func staff_focus_flash(at: Vector3) -> void:
+	_staff_spell_contact(at, StaffLv20Art, .0054, .38, StaffLv20Art.FOCUS_FLASH)
+
+func staff_meteor_impact(center: Vector3, radius: float, camera: Camera3D) -> void:
+	var visual_origin := center + Vector3.UP * .045 + camera.global_basis.z * radius * .30
+	_staff_spell_contact(visual_origin, StaffLv20Art, radius / 205.0, .50)
+
+func _staff_spell_contact(at: Vector3, art: Script, size: float, lifetime: float = .24, row: int = -1) -> void:
+	if row < 0: row = art.IMPACT
+	var sprite := Sprite3D.new()
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sprite.pixel_size = size
+	sprite.texture = art.frame(row, 0)
+	sprite.offset = art.offset_3d(row, 0)
+	add_child(sprite)
+	sprite.global_position = at
+	particles.append({"node": sprite, "velocity": Vector3.ZERO, "life": lifetime, "total": lifetime, "spell_art": art, "art_row": row})
+
+func staff_ice_crystals(center: Vector3, radius: float, camera: Camera3D) -> void:
+	var glow := Color("#91e5ff")
+	sector(center + Vector3.UP * .06, radius, 0.0, TAU, Color(glow, .32), 0.0, .19)
+	var visual_origin := center + Vector3.UP * .045 + camera.global_basis.z * radius * .30
+	_staff_spell_contact(visual_origin, StaffLv15Art, radius / 260.0, .48)
+	burst(center + Vector3.UP * .65, glow, 13)
+
 func double_slash(camera: Camera3D, blade: Dictionary, pose: Dictionary, stage: int, cast_id: int) -> void:
 	if _double_slash == null:
 		_double_slash = BasicSwordSlash.new()
@@ -293,10 +401,11 @@ func _double_slash_sparks(tip: Vector3, angle: float) -> void:
 		var life := 0.105 + float(i % 3) * 0.02
 		particles.append({"node": spark, "velocity": velocity, "gravity": 1.5, "life": life, "total": life, "sight_point": tip})
 
-func fire_blast(where: Vector3, radius: float, element: String) -> void:
+func fire_blast(where: Vector3, radius: float, element: String, charged_camera: Camera3D = null) -> void:
 	if element != "fire" or not where.is_finite() or not is_finite(radius) or radius <= 0: return
 	var blast := FireBlastVisual.new()
-	blast.configure(where, radius, element)
+	if is_instance_valid(charged_camera): blast.configure_charged_fire(where, radius, charged_camera)
+	else: blast.configure(where, radius, element)
 	add_child(blast)
 	fire_blasts.append(blast)
 
@@ -306,6 +415,7 @@ func parry_clash(where: Vector3,perfect: bool=true) -> void:
 	clashes.append(clash);clash_count+=1;last_clash=where
 
 func clear_transients() -> void:
+	hide_staff_fire_breath()
 	if _basic_slash != null: _basic_slash.clear()
 	if _double_slash != null: _double_slash.clear()
 	if _spin_slash != null: _spin_slash.clear()
@@ -511,6 +621,23 @@ func burst(where: Vector3, color: Color, count: int = 10, sight_point: Vector3=V
 		add_child(piece)
 		particles.append({"node": piece, "velocity": Vector3(randf_range(-2.5, 2.5), randf_range(1.0, 3.5), randf_range(-2.5, 2.5)), "life": 0.4, "total": 0.4,"sight_point":sight_point})
 
+func rifle_load_round(receiver: Vector3, direction: Vector3, camera: Camera3D, round_id: String) -> void:
+	const DURATION := .18
+	var round_sprite := Sprite3D.new()
+	round_sprite.texture = RifleCartridgeArt.texture(round_id)
+	round_sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	round_sprite.pixel_size = .016
+	round_sprite.no_depth_test = true
+	round_sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(round_sprite)
+	var view := camera.global_basis
+	var screen := Vector2(direction.dot(view.x), direction.dot(view.y))
+	round_sprite.global_basis = view.rotated(view.z, screen.angle() - PI * .5)
+	var offset := -direction * .38 + Vector3.UP * .19
+	round_sprite.global_position = receiver + offset
+	particles.append({"node": round_sprite, "velocity": -offset / DURATION,
+		"life": DURATION, "total": DURATION, "sight_point": receiver})
+
 func number(where: Vector3, text: String, heavy: bool = false, sight_point: Vector3=Vector3.INF) -> void:
 	var label := Label3D.new()
 	label.text = text
@@ -552,7 +679,15 @@ func tick(delta: float) -> void:
 			particles.erase(entry)
 			continue
 		entry.node.position += entry.velocity * delta
-		if entry.has("ember_opacity"):
+		if entry.has("spell_art"):
+			var art: Script = entry.spell_art
+			var row: int = entry.art_row
+			var progress := 1.0 - float(entry.life) / float(entry.total)
+			var frame := mini(int(progress * art.FRAME_COUNT), art.FRAME_COUNT - 1)
+			entry.node.texture = art.frame(row, frame)
+			entry.node.offset = art.offset_3d(row, frame)
+			entry.node.modulate.a = 1.0 - smoothstep(.65, 1.0, progress)
+		elif entry.has("ember_opacity"):
 			entry.velocity.y -= float(entry.gravity) * delta
 			entry.node.modulate.a = float(entry.ember_opacity) * smoothstep(0.0, float(entry.total) * .72, float(entry.life))
 		elif entry.node is MeshInstance3D:

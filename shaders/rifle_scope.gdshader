@@ -10,5 +10,5 @@ void fragment(){
  float unit=min(viewport_size.x,viewport_size.y);
  float aperture=mix(unit*.60,unit*.16,focus);
  float edge=smoothstep(aperture,aperture+unit*.08,side);
- COLOR=vec4(.025,.04,.055,edge*.68*focus);
+ COLOR=vec4(0.0,0.0,0.0,edge*.95*focus);
 }

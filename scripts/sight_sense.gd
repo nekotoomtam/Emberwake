@@ -48,6 +48,9 @@ func sight_direction() -> Vector3:
  if game.mode not in ["practice","combat"]:return forward
  if game.test_aim.length_squared()>.001:return Vector3(game.test_aim.x,0,game.test_aim.z).normalized()
  var point:=ground(game._mouse_position)
+ if game.rifle_aiming():
+  var target: Vector3 = game.cursor_world_at_height(game.rifle_cursor_height())
+  if target.is_finite(): point = Vector2(target.x, target.z)
  var offset:=Vector3(point.x-game.player.position.x,0,point.y-game.player.position.z)
  return offset.normalized() if offset.length_squared()>.1 else game.aim
 func in_cone(point: Vector3) -> bool:
@@ -110,6 +113,17 @@ func update_view(delta: float) -> void:
  cue_material.set_shader_parameter("player_ground",Vector2(game.player.position.x,game.player.position.z))
  cue_material.set_shader_parameter("facing",Vector2(forward.x,forward.z).normalized())
  material.set_shader_parameter("actor_enabled",0.0);material.set_shader_parameter("weapon_enabled",0.0)
+ material.set_shader_parameter("carry_enabled", 0.0)
+ material.set_shader_parameter("carry_off_enabled", 0.0)
+ var clear_rifle: bool = game.avatar.weapon_family == "rifle" and (game.avatar.facing == "left" or (game.avatar.rifle_raised_aim and game.avatar.facing != "back"))
+ var clear_pistol: bool = game.avatar.weapon_family == "pistol" and game.avatar.facing != "back"
+ if game.avatar.weapon.visible and (game.avatar.shows_flat_melee() or game.avatar.shows_axial_staff() or clear_rifle or clear_pistol):
+  _sharp_carried_weapon("carry", game.avatar.weapon, size)
+ elif game.dual_visual.visible and game.avatar.facing != "back":
+  for index in game.dual_visual.rigs.size():
+   var rig = game.dual_visual.rigs[index]
+   if rig.weapon.visible and rig.weapon_family == "pistol":
+    _sharp_carried_weapon("carry" if index == 0 else "carry_off", rig.weapon, size)
  for i in range(6):material.set_shader_parameter("npc%d_enabled"%i,0.0)
  var npc_index:=0
  var sight_origin: Vector3 = game.player.position
@@ -211,10 +225,15 @@ func reach() -> float:
  var room_multiplier := DUNGEON_REACH_MULTIPLIER if game.encounter_mode == "dungeon" else 1.0
  return game.stats.value("sight_range") * room_multiplier * game.rifle_focus_state.sight_multiplier() * game.anatomy.sight_multiplier()
 
-func _sharp_sprite(prefix: String,sprite: SpriteBase3D,texture: Texture2D,alpha: float,size: Vector2,flip: bool) -> void:
+func _sharp_carried_weapon(prefix: String, sprite: Sprite3D, size: Vector2) -> void:
+ material.set_shader_parameter(prefix + "_flip_v", sprite.flip_v)
+ _sharp_sprite(prefix, sprite, sprite.texture, sprite.modulate.a, size, false, sprite.offset)
+
+func _sharp_sprite(prefix: String,sprite: SpriteBase3D,texture: Texture2D,alpha: float,size: Vector2,flip: bool,offset: Vector2 = Vector2.ZERO) -> void:
  var half: Vector2=texture.get_size()*.5
- var tl: Vector2=game.camera.unproject_position(sprite.global_transform*Vector3(-half.x*sprite.pixel_size,half.y*sprite.pixel_size,0))/size
- var tr: Vector2=game.camera.unproject_position(sprite.global_transform*Vector3(half.x*sprite.pixel_size,half.y*sprite.pixel_size,0))/size
- var bl: Vector2=game.camera.unproject_position(sprite.global_transform*Vector3(-half.x*sprite.pixel_size,-half.y*sprite.pixel_size,0))/size
+ var transform := sprite.global_transform.scaled_local(Vector3.ONE * sprite.pixel_size)
+ var tl: Vector2=game.camera.unproject_position(transform*Vector3(offset.x-half.x,offset.y+half.y,0))/size
+ var tr: Vector2=game.camera.unproject_position(transform*Vector3(offset.x+half.x,offset.y+half.y,0))/size
+ var bl: Vector2=game.camera.unproject_position(transform*Vector3(offset.x-half.x,offset.y-half.y,0))/size
  material.set_shader_parameter(prefix+"_mask",texture);material.set_shader_parameter(prefix+"_enabled",alpha);material.set_shader_parameter(prefix+"_flip",flip)
  material.set_shader_parameter(prefix+"_origin",tl);material.set_shader_parameter(prefix+"_dx",tr-tl);material.set_shader_parameter(prefix+"_dy",bl-tl)

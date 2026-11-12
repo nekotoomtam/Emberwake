@@ -2,11 +2,11 @@ extends RefCounted
 ## Long, broad +X blade with a compact two-hand hilt and fine pixel outlines.
 ## The hilt occupies one fifth of the silhouette; its hands are native clusters.
 
-static var _texture_cache: Texture2D
+static var _texture_cache := {}
 
-static func texture() -> Texture2D:
-	if _texture_cache != null:
-		return _texture_cache
+static func texture(baked_hand: bool = true) -> Texture2D:
+	if _texture_cache.has(baked_hand):
+		return _texture_cache[baked_hand]
 	var image := Image.create(150, 40, false, Image.FORMAT_RGBA8)
 	image.fill(Color.TRANSPARENT)
 	var outline := Color("263141")
@@ -40,10 +40,11 @@ static func texture() -> Texture2D:
 	image.fill_rect(Rect2i(31, 10, 2, 20), gold)
 	image.fill_rect(Rect2i(29, 9, 2, 2), gold)
 	image.fill_rect(Rect2i(33, 29, 2, 2), gold)
-	image.fill_rect(Rect2i(10, 18, 4, 4), Color("ffd4ad"))
-	image.fill_rect(Rect2i(20, 18, 4, 4), Color("ffd4ad"))
-	_texture_cache = ImageTexture.create_from_image(image)
-	return _texture_cache
+	if baked_hand:
+		image.fill_rect(Rect2i(10, 18, 4, 4), Color("ffd4ad"))
+		image.fill_rect(Rect2i(20, 18, 4, 4), Color("ffd4ad"))
+	_texture_cache[baked_hand] = ImageTexture.create_from_image(image)
+	return _texture_cache[baked_hand]
 
 static func geometry() -> Dictionary:
 	return {"pivot": Vector2(12, 20), "tip": Vector2(146, 20)}

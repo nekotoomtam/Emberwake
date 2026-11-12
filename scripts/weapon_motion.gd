@@ -112,9 +112,9 @@ func start(index: int, angle: float) -> bool:
 	busy = true
 	return true
 
-func start_mace_fire_lift(index: int, angle: float) -> bool:
+func start_mace_fire_lift(index: int, angle: float, damage: float) -> bool:
 	if family != "mace": return false
-	var accepted: bool = _mace_motion.start_fire_lift(index, angle)
+	var accepted: bool = _mace_motion.start_fire_lift(index, angle, damage)
 	_sync_mace_state()
 	return accepted
 
@@ -430,8 +430,18 @@ func _charge_pose() -> Dictionary:
 	pose.body_lean=-.055*anticipation;pose.phase="windup";pose.progress=anticipation;pose.trail=false
 	return pose
 
-func configure_staff(tier: int) -> void:
-	_staff_motion.set_cast_tier(tier)
+func configure_staff(tier: int, element: String = "fire", orbs: Array[String] = [], skill: String = "", scale: Vector2 = Vector2.ONE) -> void:
+	_staff_motion.set_cast_tier(tier, element, orbs, skill, scale)
 
-func configure_rifle(aimed: bool) -> void:
-	_rifle_motion.configure_aim(aimed)
+func configure_sword_power(power: float) -> void:
+	_sword_motion.weapon_power = maxf(1.0, power)
+
+func configure_rifle(aimed: bool, rapid_fire: bool = false, finisher: bool = false, timing_scale: float = 1.0) -> void:
+	_rifle_motion.configure_aim(aimed, rapid_fire, finisher, timing_scale)
+
+func rifle_finisher_charging() -> bool:
+	return family == "rifle" and _rifle_motion.finisher_charging()
+
+func retarget_rifle_finisher(angle: float) -> void:
+	_rifle_motion.retarget_finisher(angle)
+	_sync_rifle_state()

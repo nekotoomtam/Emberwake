@@ -37,7 +37,7 @@ func _test_release_and_cadence() -> void:
 	var motion = _motion()
 	var attack: Dictionary = motion.definition(0)
 	_check(attack.kind == "projectile" and attack.element == "physical", "release dispatches one physical projectile")
-	_near(attack.damage, 49.5, "projectile consumer receives powerful physical damage")
+	_near(attack.damage, 52.0, "projectile consumer receives the rifle's base damage")
 	_near(attack.reach, 9.0, "range indicator receives rifle reach")
 	_near(attack.projectile_range, 9.0, "bullet travel is bounded")
 	_near(attack.projectile_speed, 22.0, "projectile consumer receives visible flight speed")
@@ -90,7 +90,7 @@ func _test_release_and_cadence() -> void:
 	attack.damage = 999.0
 	attack.magazine_capacity = 999
 	attack.recoil_distance = 999.0
-	_near(motion.definition(0).damage, 49.5, "consumer cannot mutate future projectile damage")
+	_near(motion.definition(0).damage, 52.0, "consumer cannot mutate future projectile damage")
 	_check(motion.definition(0).magazine_capacity == 5, "consumer cannot mutate future magazine configuration")
 	_near(motion.definition(0).recoil_distance, 0.22, "consumer cannot mutate future movement budget")
 

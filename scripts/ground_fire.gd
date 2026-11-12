@@ -44,7 +44,7 @@ func tick(delta: float,enemies: Array,world: World3D=null) -> void:
    pulse_elapsed=0;pulses+=1
    var hitids: Dictionary={}
    for enemy in enemies.duplicate():
-    if not is_instance_valid(enemy) or enemy.dead or enemy.health<=0 or hitids.has(enemy.get_instance_id()):continue
+    if not is_instance_valid(enemy) or enemy.get("dead")==true or enemy.health<=0 or hitids.has(enemy.get_instance_id()):continue
     for zone in zones:
      if _covers(zone,enemy,world):
       hitids[enemy.get_instance_id()]=true;damage_hit.emit(enemy,DAMAGE)

@@ -36,11 +36,11 @@ func _test_single_release_and_rhythm() -> void:
 	var motion = _motion()
 	var attack: Dictionary = motion.definition(0)
 	_check(attack.kind == "projectile" and attack.element == "fire", "shot explicitly dispatches a fire projectile")
-	_near(attack.damage, 72.0, "projectile consumer receives direct fire damage")
+	_near(attack.damage, 42.0, "projectile consumer receives tier-one direct fire damage")
 	_near(attack.reach, 6.0, "range indicator receives finite projectile reach")
 	_near(attack.projectile_range, 6.0, "projectile travel is bounded")
-	_near(attack.projectile_speed, 5.5, "projectile consumer receives flight speed")
-	_near(attack.projectile_radius, 0.18, "projectile consumer receives collision radius")
+	_near(attack.projectile_speed, 8.0, "projectile consumer receives flight speed")
+	_near(attack.projectile_radius, 0.24, "projectile consumer receives tier-one collision radius")
 	_near(attack.knockback, 1.4, "projectile contact receives modest knockback")
 	_near(attack.windup, 0.28, "release waits for the committed windup")
 	_near(attack.active, 0.10, "release pose has a short active hold")
@@ -73,7 +73,7 @@ func _test_single_release_and_rhythm() -> void:
 	var idle: Dictionary = motion.advance(9.0)
 	_check(not idle.projectile_ready and not idle.finished and not idle.active and not idle.damage_ready, "idle produces no duplicate event")
 	attack.damage = 999.0
-	_near(motion.definition(0).damage, 72.0, "consumer mutation cannot change the next shot definition")
+	_near(motion.definition(0).damage, 42.0, "consumer mutation cannot change the next shot definition")
 
 func _test_large_steps_and_subdivision() -> void:
 	# Catches a skipped release when a frame jumps over active or entire attack.

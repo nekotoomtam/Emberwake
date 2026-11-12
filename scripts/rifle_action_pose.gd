@@ -4,7 +4,8 @@ static func bolt_pose(progress: float,angle: float) -> Dictionary:
  var p:=clampf(progress,0,1)
  var pose:=Stance.rest("rifle",angle,-1)
  pose.phase="bolt";pose.progress=p;pose.stance_managed=false
- pose.pitch=.24*sin(PI*p);pose.radius=.35;pose.grip_height=.87
+ var lift := sin(PI * p)
+ pose.pitch=.18+.54*lift;pose.radius=.31;pose.grip_height=.94+.13*lift
  pose.support_pull=sin(PI*p);pose.body_lean=-.025*sin(PI*p)
  return pose
 static func reload_pose(cycle,angle: float) -> Dictionary:

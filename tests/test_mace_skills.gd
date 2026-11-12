@@ -33,6 +33,35 @@ func release_key(code: int) -> void:
 	event.physical_keycode = code
 	game._input(event)
 
+func check_weapon_scaling() -> void:
+	fresh()
+	game.loadout.active = 0
+	game.loadout.sets[0].main = "mace0"
+	game.loadout.sets[0].off = ""
+	game.loadout.items.mace0.mace_power = 50.0
+	game.loadout_edited()
+	game.stats.attributes = {"strength": 13, "dexterity": 23, "intelligence": 23}
+	game.mana = game.stats.value("max_mana")
+	check(game._begin_skill("mace_impact"), "equipped mace starts its skill")
+	check(is_equal_approx(game.motion.definition(0).damage, 78.0), "impact scales with actual mace power and STR only")
+	game.tick(.80)
+	check(game._begin_skill("mace_fissure"), "equipped mace starts its fire buff")
+	game.tick(.60)
+	check(game.request_attack(), "buffed attack starts with the equipped mace")
+	check(is_equal_approx(game.motion.definition(0).damage, 36.0), "fire lift inherits the buff's scaled power")
+	game.tick(.33)
+	check(not game.mace_fire_lobs.active.is_empty() and is_equal_approx(game.mace_fire_lobs.active[0].damage, 39.0), "the launched fireball carries scaled blast damage")
+	game.tick(2.0)
+	check(game._begin_skill("mace_earth_wave"), "equipped mace starts its charged leap")
+	game.motion.charging = true
+	game.motion.advance(1.0)
+	game.motion.release_charge()
+	var leap: Dictionary = game.motion.definition(0)
+	check(is_equal_approx(leap.damage, 165.0) and is_equal_approx(leap.edge_damage, 99.0), "full charge keeps weapon and STR scaling on both damage regions")
+	var capped := MaceSkills.new()
+	capped.configure("mace_impact", {}, 50.0, 100.0)
+	check(is_equal_approx(capped.definition(0).damage, 91.0), "STR damage bonus caps at forty percent")
+
 func check_skill_categories() -> void:
 	var ground_impacts := ["mace_impact", "mace_double_impact", "mace_gather", "mace_aftershock", "mace_earth_wave"]
 	for id: String in MaceSkills.SKILLS:
@@ -62,7 +91,7 @@ func check_armor_counter() -> void:
 	game.tick(.49)
 	check(game.hits == 0 and front.mace_armor.stacks == 0, "the first half second is a stance without damage")
 	game.tick(.23)
-	check(is_equal_approx(front.max_health - front.health, 78.0) and front.mace_armor.stacks == 2 and side.mace_armor.stacks == 2 and rear.mace_armor.stacks == 0, "one forward sweep deals damage before adding two stacks")
+	check(is_equal_approx(front.max_health - front.health, 82.0) and front.mace_armor.stacks == 2 and side.mace_armor.stacks == 2 and rear.mace_armor.stacks == 0, "one forward sweep deals damage before adding two stacks")
 	var normal_flash: Sprite3D = game.fx.mace_sweep_flash
 	check(is_instance_valid(normal_flash) and normal_flash.visible and normal_flash.material_override is ShaderMaterial, "normal armor sweep carries the cold painted weapon-head streak")
 	var normal_width := normal_flash.pixel_size if is_instance_valid(normal_flash) else 0.0
@@ -156,7 +185,7 @@ func run() -> void:
 	check(impact != null and impact.scale.x < .4, "the painted ring starts compact")
 	game.tick(.11)
 	check(impact != null and is_equal_approx(impact.scale.x, 1.0) and is_equal_approx(impact.pixel_size * impact.ART_RADIUS, 1.35), "the painted ring expands to the actual hit radius")
-	check(front.max_health - front.health == 50 and beside_head.max_health - beside_head.health == 50, "circle deals 50 around the head's landing point")
+	check(front.max_health - front.health == 52 and beside_head.max_health - beside_head.health == 52, "circle deals 52 around the head's landing point")
 	check(beside_player.health == beside_player.max_health and game.hits == 2, "circle is centered ahead and hits each enemy once")
 	check(front.mace_armor.stacks == 1 and beside_head.mace_armor.stacks == 1 and beside_player.mace_armor.stacks == 0, "the impact opens one armor stack on targets it damages")
 	game.tick(.24)
@@ -169,10 +198,10 @@ func run() -> void:
 	key(KEY_2)
 	check(game.active_skill_id == "mace_sweep" and game.mana == starting_mana - 20, "key 2 spends 20 mana for sweep")
 	game.tick(.50)
-	check(left.max_health - left.health == 18 and right.max_health - right.health == 18, "first fan deals 18 on both sides of the front")
+	check(left.max_health - left.health == 20 and right.max_health - right.health == 20, "first fan deals 20 on both sides of the front")
 	check(behind.health == behind.max_health and outside.health == outside.max_health and game.hits == 2, "fan excludes rear and outside targets")
 	game.tick(.50)
-	check(game.hits == 4 and left.max_health - left.health == 40 and right.max_health - right.health == 40, "second fan adds 22 damage to both targets")
+	check(game.hits == 4 and left.max_health - left.health == 44 and right.max_health - right.health == 44, "second fan adds 24 damage to both targets")
 	check(behind.health == behind.max_health and outside.health == outside.max_health, "the arm loop and both strikes leave rear and outside targets untouched")
 	check(is_equal_approx(game.mana, starting_mana - 20 + .5), "both sweeps share one mana payment")
 	game.tick(.4)
@@ -196,11 +225,11 @@ func run() -> void:
 	var second_spot = dummy(3.7, 1.57)
 	key(KEY_1)
 	game.tick(.48)
-	check(first_spot.max_health - first_spot.health == 34 and second_spot.health == second_spot.max_health, "first slam hits only the first spot")
+	check(first_spot.max_health - first_spot.health == 36 and second_spot.health == second_spot.max_health, "first slam hits only the first spot")
 	game.tick(.33)
 	check(game.motion.stage == 1 and game.motion.sample().get("body_spin", 0) > 2.0 and game.hits == 1, "the automatic follow-up turns the body before contact")
 	game.tick(.42)
-	check(game.hits == 3 and first_spot.max_health - first_spot.health == 76 and second_spot.max_health - second_spot.health == 42, "the second slam lands automatically with a wider circle")
+	check(game.hits == 3 and first_spot.max_health - first_spot.health == 80 and second_spot.max_health - second_spot.health == 44, "the second slam lands automatically with a wider circle")
 	check(is_equal_approx(game.mana, starting_mana - 28 + 1.23 * .5), "the follow-up shares the initial mana payment")
 	fresh()
 	var steered_target = dummy(3.7, 2.25)
@@ -212,7 +241,7 @@ func run() -> void:
 	check(is_equal_approx(game.motion.aim_angle, deg_to_rad(25.0)), "second windup steers toward the cursor but caps at 25 degrees")
 	game.test_aim = Vector3.FORWARD
 	game.tick(.28)
-	check(game.hits == 1 and steered_target.max_health - steered_target.health == 42, "contact stays on the steered line once the downswing starts")
+	check(game.hits == 1 and steered_target.max_health - steered_target.health == 44, "contact stays on the steered line once the downswing starts")
 	fresh()
 	check(game.loadout.equip_skill(1, "mace_gather"), "pull can be equipped")
 	var inward = dummy(3.4, 1.0)
@@ -347,7 +376,7 @@ func run() -> void:
 	landing_target.armor_rating = 200.0
 	var landing_points: Array[Vector3] = []
 	var ember_contacts: Array[Vector3] = []
-	var track_landing := func(point: Vector3, direct: Node3D, _hit_ids: Dictionary) -> void:
+	var track_landing := func(point: Vector3, direct: Node3D, _hit_ids: Dictionary, _damage: float) -> void:
 		if direct != null: return
 		landing_points.append(point)
 		var flash: Node = game.fx.mace_impacts.back() if not game.fx.mace_impacts.is_empty() else null
@@ -381,7 +410,7 @@ func run() -> void:
 			dummy(point.x + lateral.x, point.z + lateral.z)
 	await physics_frame
 	game.tick(.65)
-	check(game.hits == 1 and game.total_damage == 24 and landing_points.size() == 1, "the first landing deals one burst of fire damage")
+	check(game.hits == 1 and game.total_damage == 26 and landing_points.size() == 1, "the first landing deals one burst of fire damage")
 	check(game.mace_fire_lobs.active.size() == 1, "one large fireball continues from the first landing")
 	var large_pixel_size: float = game.mace_fire_lobs.active[0].node.pixel_size if not game.mace_fire_lobs.active.is_empty() else 0.0
 	for frame in 45:
@@ -402,7 +431,7 @@ func run() -> void:
 	check(landing_points.size() == 5 and game.mace_fire_lobs.active.is_empty(), "two large ground contacts and all three fragments resolve")
 	if landing_points.size() == 5:
 		check(is_equal_approx(landing_points[0].distance_to(landing_points[1]), 3.2) and is_equal_approx(landing_points[1].distance_to(landing_points[2]), 2.1), "the main path keeps its short final leg")
-	check(game.hits == 5 and game.total_damage == 120, "both flank fragments deal damage and overlapping blasts hit each target only once")
+	check(game.hits == 5 and game.total_damage == 130, "both flank fragments deal damage and overlapping blasts hit each target only once")
 	check(ember_contacts.size() == 5, "each real landing produces its own painted ember contact")
 	for index in ember_contacts.size():
 		check(ember_contacts[index].distance_to(landing_points[index]) < .1, "the painted flash stays at landing %d" % index)
@@ -419,9 +448,9 @@ func run() -> void:
 	await physics_frame
 	var hits_before_direct: int = game.hits
 	var damage_before_direct: float = game.total_damage
-	game.mace_fire_lobs.launch(Vector3(2.4, .76, 0), Vector3(5.5, .04, 0), Vector3.RIGHT, game.camera)
+	game.mace_fire_lobs.launch(Vector3(2.4, .76, 0), Vector3(5.5, .04, 0), Vector3.RIGHT, game.camera, 31.0)
 	game.tick(.10)
-	check(game.hits == hits_before_direct + 1 and game.total_damage == damage_before_direct + 24 and game.mace_fire_lobs.active.is_empty(), "a direct body impact detonates immediately and stops the whole lob")
+	check(game.hits == hits_before_direct + 1 and game.total_damage == damage_before_direct + 31 and game.mace_fire_lobs.active.is_empty(), "a direct body impact detonates immediately and stops the whole lob")
 	fresh()
 	var wall := StaticBody3D.new()
 	wall.position = Vector3(4.1, 2.5, 0)
@@ -477,12 +506,12 @@ func run() -> void:
 	key(KEY_2)
 	check(game.active_skill_id == "mace_impact", "the skill slam starts (motion %s, elapsed %s, slots %s)" % [game.motion.busy, game.motion.elapsed, game.loadout.mace_skill_slots])
 	game.tick(.85)
-	check(is_equal_approx(game.total_damage, 177.2) and game._mace_ground.rift.get("charges") == 1, "a skill slam adds 70 percent to its own damage (damage %s, rift %s)" % [game.total_damage, game._mace_ground.rift])
+	check(is_equal_approx(game.total_damage, 180.6) and game._mace_ground.rift.get("charges") == 1, "a skill slam adds 70 percent to its own damage (damage %s, rift %s)" % [game.total_damage, game._mace_ground.rift])
 	game._next_combo = 2
 	game.rewards.combo_left = .7
 	check(game.request_attack(), "a third ground hit can start")
 	game.tick(.70)
-	var expected_echo_total := 177.2 + 46.0 / .90 * 1.70
+	var expected_echo_total := 180.6 + 46.0 / .90 * 1.70
 	check(game._mace_ground.rift.is_empty() and game._mace_ground.echoes.is_empty() and is_equal_approx(game.total_damage, expected_echo_total), "the last echo includes the increased damage against the armor opened by the previous skill (damage %s, rift %s)" % [game.total_damage, game._mace_ground.rift])
 	fresh()
 	dummy(2.55, 2.4)
@@ -514,7 +543,7 @@ func run() -> void:
 	game.tick(.85)
 	key(KEY_3)
 	game.tick(1.62)
-	check(game.hits == 5 and is_equal_approx(game.total_damage, 143.2) and game._mace_ground.rift.get("charges") == 1, "both double slam contacts independently add their own bonus damage")
+	check(game.hits == 5 and is_equal_approx(game.total_damage, 150.0) and game._mace_ground.rift.get("charges") == 1, "both double slam contacts independently add their own bonus damage")
 	fresh()
 	key(KEY_1)
 	game.tick(.53)
@@ -535,7 +564,7 @@ func run() -> void:
 	release_key(KEY_3)
 	game.tick(.56)
 	check(absf(game.player.position.x) < .03 and game.hits == 2 and core.stagger > 0.0, "a tap slams in place and staggers targets in the forward fan")
-	check(is_equal_approx(core.max_health - core.health, 64) and is_equal_approx(edge.max_health - edge.health, 38) and outside_landing.health == outside_landing.max_health and behind_landing.health == behind_landing.max_health, "a tap deals 64 close and 38 farther ahead and leaves the sides and rear clear")
+	check(is_equal_approx(core.max_health - core.health, 68) and is_equal_approx(edge.max_health - edge.health, 40) and outside_landing.health == outside_landing.max_health and behind_landing.health == behind_landing.max_health, "a tap deals 68 close and 40 farther ahead and leaves the sides and rear clear")
 	for tier in [2, 3]:
 		fresh()
 		game.test_aim = Vector3.BACK if tier == 2 else Vector3.RIGHT
@@ -568,7 +597,7 @@ func run() -> void:
 			var shader: ShaderMaterial = wave.material_override
 			check(wave.position.distance_to(landed) < .09 and wave.basis.x.normalized().dot(game.test_aim) > .999, "the painted wave follows the actual landing and aim")
 			check(is_equal_approx(shader.get_shader_parameter("half_arc"), MaceSkills.LEAP_GRADES[tier - 1].arc * .5), "the painted wave takes its angle from the live damage footprint")
-		check(is_equal_approx(close_target.max_health - close_target.health, 82 if tier == 2 else 100) and is_equal_approx(far_target.max_health - far_target.health, 49 if tier == 2 else 60) and is_equal_approx(longer_target.max_health - longer_target.health, 49 if tier == 2 else 60) and beyond_target.health == beyond_target.max_health, "tier %d keeps its angle and hits along the longer fan" % tier)
+		check(is_equal_approx(close_target.max_health - close_target.health, 88 if tier == 2 else 110) and is_equal_approx(far_target.max_health - far_target.health, 52 if tier == 2 else 66) and is_equal_approx(longer_target.max_health - longer_target.health, 52 if tier == 2 else 66) and beyond_target.health == beyond_target.max_health, "tier %d keeps its angle and hits along the longer fan" % tier)
 	fresh()
 	game.test_aim = Vector3.ZERO
 	game.tick(1.0)
@@ -608,9 +637,9 @@ func run() -> void:
 	key(KEY_3)
 	release_key(KEY_3)
 	game.tick(.56)
-	check(is_equal_approx(rift_direct.max_health - rift_direct.health, 64) and is_equal_approx(rift_edge.max_health - rift_edge.health, 38) and rift_spread.health == rift_spread.max_health and game._mace_ground.rift.get("charges") == 2, "the landing spends a rift charge and queues a separate echo")
+	check(is_equal_approx(rift_direct.max_health - rift_direct.health, 68) and is_equal_approx(rift_edge.max_health - rift_edge.health, 40) and rift_spread.health == rift_spread.max_health and game._mace_ground.rift.get("charges") == 2, "the landing spends a rift charge and queues a separate echo")
 	game.tick(.24)
-	check(is_equal_approx(rift_direct.max_health - rift_direct.health, 108.8) and is_equal_approx(rift_edge.max_health - rift_edge.health, 64.6) and rift_spread.health == rift_spread.max_health, "the delayed echo uses each leap target's actual damage")
+	check(is_equal_approx(rift_direct.max_health - rift_direct.health, 115.6) and is_equal_approx(rift_edge.max_health - rift_edge.health, 68.0) and rift_spread.health == rift_spread.max_health, "the delayed echo uses each leap target's actual damage")
 	fresh()
 	var full_echo_target = dummy(3.15, 0)
 	key(KEY_1)
@@ -622,14 +651,15 @@ func run() -> void:
 	game.tick(.95)
 	release_key(KEY_3)
 	game.tick(.56)
-	check(is_equal_approx(before_full_leap - full_echo_target.health, 100.0), "a full leap inside the rift hits for 100 first")
+	check(is_equal_approx(before_full_leap - full_echo_target.health, 110.0), "a full leap inside the rift hits for 110 first")
 	game.tick(.24)
-	check(is_equal_approx(before_full_leap - full_echo_target.health, 170.0), "the same full-leap target takes another 70 after the delay")
+	check(is_equal_approx(before_full_leap - full_echo_target.health, 187.0), "the same full-leap target takes another 77 after the delay")
 	check_armor_counter()
 	fresh()
 	game.set_weapon_family("sword")
 	key(KEY_1)
 	check(game.active_skill_id == "impaling_thrust", "switching to sword restores its original skill slots")
+	check_weapon_scaling()
 	game.queue_free()
 	await process_frame
 	print("MACE SKILLS: ", failures, " failures")

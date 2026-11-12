@@ -1,12 +1,15 @@
 extends "res://scripts/mace_motion.gd"
 
+const BASE_WEAPON_POWER := 40.0
+const DAMAGE_PER_STRENGTH_POINT := .02
+const MAX_STRENGTH_DAMAGE_BONUS := .40
 const DEFAULT_SLOTS := ["mace_impact", "mace_sweep", "mace_double_impact"]
 const FIRE_BUFF_DURATION := 5.0
 const ARMOR_COUNTER_WINDOW := .50
 const LEAP_GRADES := [
-	{"dash_count": 0.0, "arc": PI / 3.0, "damage": 64.0, "edge_damage": 38.0},
-	{"dash_count": 1.0, "arc": TAU * 80.0 / 360.0, "damage": 82.0, "edge_damage": 49.0},
-	{"dash_count": 2.0, "arc": TAU * 100.0 / 360.0, "damage": 100.0, "edge_damage": 60.0},
+	{"dash_count": 0.0, "arc": PI / 3.0, "power_ratio": 1.70, "edge_power_ratio": 1.00},
+	{"dash_count": 1.0, "arc": TAU * 80.0 / 360.0, "power_ratio": 2.20, "edge_power_ratio": 1.30},
+	{"dash_count": 2.0, "arc": TAU * 100.0 / 360.0, "power_ratio": 2.75, "edge_power_ratio": 1.65},
 ]
 const SKILLS := {
 	"mace_impact": {"name": "ก้าวกระแทก", "level": 5, "cost": 18.0, "cooldown": 5.0,
@@ -14,57 +17,57 @@ const SKILLS := {
 		"description": "Lv5 • ก้าวสั้นแล้วทุบ วงออกตรงหัวกระบองที่แตะพื้น • เปิดเกราะ 1 ชั้น",
 		"kind": "slam", "windup": .28, "active": .20, "recovery": .27,
 		"impact_progress": .75, "lunge_distance": .65, "reach": SLAM_REACH,
-		"area_radius": 1.35, "arc": TAU, "damage": 50.0, "knockback": 4.0, "armor_stacks": 1},
+		"area_radius": 1.35, "arc": TAU, "power_ratio": 1.30, "knockback": 4.0, "armor_stacks": 1},
 	"mace_sweep": {"name": "ทุบกวาด", "level": 5, "cost": 20.0, "cooldown": 6.0,
 		"tags": [SkillTags.SWEEP, SkillTags.MULTI_HIT],
 		"description": "Lv5 • ฟาดเป็นพัดด้านหน้า แล้วหมุนตัวฟาดซ้ำทางเดิม",
 		"kind": "sweep", "windup": .23, "active": .22, "recovery": .065,
 		"impact_progress": .55, "lunge_distance": 0.0, "reach": 2.35,
-		"area_radius": 2.35, "arc": PI * .8, "damage": 18.0, "knockback": .9},
+		"area_radius": 2.35, "arc": PI * .8, "power_ratio": .50, "knockback": .9},
 	"mace_double_impact": {"name": "โถมทุบคู่", "level": 10, "cost": 28.0, "cooldown": 8.0,
 		"tags": [SkillTags.AREA, SkillTags.GROUND_AREA, SkillTags.GROUND_IMPACT, SkillTags.MULTI_HIT],
 		"description": "โถมทุบพื้นแล้วหมุนตัวทุบซ้ำ • เล็งเบนทิศได้เล็กน้อยขณะหมุน",
 		"kind": "slam", "windup": .29, "active": .20, "recovery": .12,
 		"impact_progress": .75, "lunge_distance": .90, "reach": SLAM_REACH,
-		"area_radius": 1.45, "arc": TAU, "damage": 34.0, "knockback": 1.3},
+		"area_radius": 1.45, "arc": TAU, "power_ratio": .90, "knockback": 1.3},
 	"mace_gather": {"name": "ปักกระบองรวมเป้า", "level": 10, "cost": 24.0, "cooldown": 8.0,
 		"tags": [SkillTags.AREA, SkillTags.GROUND_AREA, SkillTags.GROUND_IMPACT, SkillTags.CHARGE, SkillTags.PULL],
 		"description": "ดึงศัตรูมารวมใกล้หัวกระบอง • เดินและหันได้ขณะชาร์จ • ทำให้เป้าเดินช้า 5% / 10% / 20% นาน 5 วิ",
 		"kind": "slam", "windup": .33, "active": .19, "recovery": .26,
 		"impact_progress": .75, "lunge_distance": 0.0, "reach": SLAM_REACH,
-		"area_radius": 1.35, "arc": TAU, "damage": 24.0, "knockback": 0.0, "gathers": true, "slow_fraction": .05, "chargeable": true},
+		"area_radius": 1.35, "arc": TAU, "power_ratio": .60, "knockback": 0.0, "gathers": true, "slow_fraction": .05, "chargeable": true},
 	"mace_fissure": {"name": "งัดเพลิง", "level": 15, "cost": 29.0, "cooldown": 8.0,
 		"tags": [SkillTags.BUFF, SkillTags.PROJECTILE, SkillTags.FIRE],
 		"impact_tags": [SkillTags.AREA],
 		"description": "บัฟ 5 วิ • ลูกไฟชนศัตรูแล้วระเบิดทันที • ถ้าตกพื้นจะเด้ง 1 ครั้งก่อนแตก 3 ลูก",
 		"kind": "buff", "windup": .18, "active": .16, "recovery": .21,
 		"impact_progress": .55, "lunge_distance": 0.0, "reach": 2.1,
-		"damage": 0.0, "fire_buff": true},
+		"power_ratio": 0.0, "fire_buff": true, "lift_power_ratio": .60, "blast_power_ratio": .65},
 	"mace_aftershock": {"name": "ทุบฝังแรง", "level": 15, "cost": 20.0, "cooldown": 9.0,
 		"tags": [SkillTags.AREA, SkillTags.GROUND_AREA, SkillTags.GROUND_IMPACT, SkillTags.PERSISTENT_AREA],
 		"description": "ทุบเบาแล้ววางรอยแยก 10 วิ • ทุบลงในวงให้แรงสะท้อนตามหลัง เพิ่มดาเมจ 70% ใส่เป้าที่โดนทุบ สูงสุด 3 ครั้ง",
 		"kind": "slam", "windup": .31, "active": .20, "recovery": .25,
 		"impact_progress": .75, "lunge_distance": 0.0, "reach": SLAM_REACH,
-		"area_radius": 1.35, "arc": TAU, "damage": 14.0, "knockback": 1.0, "rift_radius": 2.80},
+		"area_radius": 1.35, "arc": TAU, "power_ratio": .35, "knockback": 1.0, "rift_radius": 2.80},
 	"mace_earth_wave": {"name": "กระโดดฟาดแผ่นดิน", "level": 20, "cost": 32.0, "cooldown": 10.0,
 		"tags": [SkillTags.AREA, SkillTags.GROUND_AREA, SkillTags.GROUND_IMPACT, SkillTags.CHARGE, SkillTags.LEAP],
 		"description": "ฟาดเป็นกรวยด้านหน้า • กดสั้นทุบอยู่กับที่ • ชาร์จเพื่อกระโดดไกลขึ้น กรวยกว้างขึ้น และฟาดแรงขึ้น",
 		"kind": "slam", "windup": .37, "active": .20, "recovery": .32,
 		"impact_progress": .75, "lunge_distance": 0.0, "reach": SLAM_REACH,
 		"area_radius": 3.0, "core_radius": 1.15, "arc": LEAP_GRADES[0].arc,
-		"damage": LEAP_GRADES[0].damage, "edge_damage": LEAP_GRADES[0].edge_damage,
+		"power_ratio": LEAP_GRADES[0].power_ratio, "edge_power_ratio": LEAP_GRADES[0].edge_power_ratio,
 		"knockback": 2.4, "stagger_duration": .32, "chargeable": true},
 	"mace_armor_counter": {"name": "ฟาดเปิดเกราะ", "level": 20, "cost": 30.0, "cooldown": 11.0,
 		"tags": [SkillTags.SWEEP, SkillTags.PARRY, SkillTags.ARMOR_BREAK],
 		"description": "ตั้งรับ 0.5 วิ แล้วฟาดเปิดเกราะ 2 ชั้น • ฟาดโดนตัวที่แพร์รีจะเปิดเกราะเต็มเพดาน",
 		"kind": "sweep", "windup": ARMOR_COUNTER_WINDOW, "active": .23, "recovery": .29,
 		"impact_progress": .55, "lunge_distance": 0.0, "reach": 2.35,
-		"area_radius": 2.35, "arc": TAU / 3.0, "damage": 78.0, "knockback": 1.5, "armor_stacks": 2},
+		"area_radius": 2.35, "arc": TAU / 3.0, "power_ratio": 2.05, "knockback": 1.5, "armor_stacks": 2},
 }
-const SECOND_SWEEP := {"windup": .30, "active": .18, "recovery": .24, "damage": 22.0, "knockback": 1.9}
+const SECOND_SWEEP := {"windup": .30, "active": .18, "recovery": .24, "power_ratio": .60, "knockback": 1.9}
 const SWEEP_TURN_START := -PI * .24
 const SWEEP_TURN_END := PI * .16
-const SECOND_IMPACT := {"windup": .32, "recovery": .28, "lunge_distance": .25, "area_radius": 1.65, "damage": 42.0, "knockback": 3.4}
+const SECOND_IMPACT := {"windup": .32, "recovery": .28, "lunge_distance": .25, "area_radius": 1.65, "power_ratio": 1.10, "knockback": 3.4}
 const GATHER_RADII := [1.35, 1.85, 2.50]
 const GATHER_SLOWS := [.05, .10, .20]
 const GATHER_SLOW_DURATION := 5.0
@@ -77,7 +80,9 @@ const FOLLOWUP_TURN_RATE := PI * (120.0 / 180.0)
 
 var skill_id := "mace_impact"
 var _followup: Dictionary = {}
-var _charge_spec: Dictionary = {}
+var _primary_spec: Dictionary = {}
+var _area_scale := 1.0
+var _scaled_power := BASE_WEAPON_POWER
 var charging := false
 var _charge_elapsed := 0.0
 var _followup_base_angle := 0.0
@@ -85,21 +90,44 @@ var _followup_base_angle := 0.0
 func is_great_charging() -> bool:
 	return false
 
-func configure(id: String, entry_pose: Dictionary) -> bool:
+func configure(id: String, entry_pose: Dictionary, weapon_power: float = BASE_WEAPON_POWER, strength: float = 3.0, area_scale: float = 1.0, windup_scale: float = 1.0) -> bool:
 	if busy or id not in SKILLS: return false
 	reset()
 	skill_id = id
-	if SKILLS[id].get("chargeable", false): _charge_spec = SKILLS[id].duplicate()
+	var strength_bonus := clampf((strength - 3.0) * DAMAGE_PER_STRENGTH_POINT, 0.0, MAX_STRENGTH_DAMAGE_BONUS)
+	_scaled_power = maxf(1.0, weapon_power) * (1.0 + strength_bonus)
+	_primary_spec = SKILLS[id].duplicate()
+	_area_scale = area_scale
+	_scale_area(_primary_spec, windup_scale)
+	_apply_damage(_primary_spec)
 	_followup.clear()
 	if id in ["mace_sweep", "mace_double_impact"]:
 		_followup = SKILLS[id].duplicate()
 		_followup.merge(SECOND_SWEEP if id == "mace_sweep" else SECOND_IMPACT, true)
+		_scale_area(_followup, windup_scale)
+		_apply_damage(_followup)
 	_held_pose = entry_pose.duplicate()
 	_held_pose.lunge_offset = 0.0
 	return true
 
+func _scale_area(spec: Dictionary, windup_scale: float) -> void:
+	if SkillTags.is_area(spec):
+		spec.windup *= windup_scale
+		for key in ["area_radius", "core_radius", "rift_radius"]:
+			if spec.has(key): spec[key] *= _area_scale
+	elif SkillTags.AREA in spec.get("impact_tags", []):
+		spec.windup *= windup_scale
+
+func _apply_damage(spec: Dictionary) -> void:
+	spec.damage = _scaled_power * float(spec.power_ratio)
+	if spec.has("edge_power_ratio"):
+		spec.edge_damage = _scaled_power * float(spec.edge_power_ratio)
+	if spec.get("fire_buff", false):
+		spec.lift_damage = _scaled_power * float(spec.lift_power_ratio)
+		spec.blast_damage = _scaled_power * float(spec.blast_power_ratio)
+
 func definition(index: int) -> Dictionary:
-	if index == 0: return _charge_spec if SKILLS[skill_id].get("chargeable", false) else SKILLS[skill_id]
+	if index == 0: return _primary_spec
 	if index == 1: return _followup
 	return {}
 
@@ -109,12 +137,12 @@ func start(index: int, angle: float) -> bool:
 	return true
 
 func can_steer_followup() -> bool:
-	return busy and skill_id == "mace_double_impact" and stage == 1 and elapsed < float(SECOND_IMPACT.windup) - EPSILON
+	return busy and skill_id == "mace_double_impact" and stage == 1 and elapsed < float(_followup.windup) - EPSILON
 
 func steer_followup(requested_angle: float, delta: float) -> void:
 	var desired := clampf(angle_difference(_followup_base_angle, requested_angle), -FOLLOWUP_TURN_LIMIT, FOLLOWUP_TURN_LIMIT)
 	var current := angle_difference(_followup_base_angle, aim_angle)
-	var steering_time := minf(delta, float(SECOND_IMPACT.windup) - elapsed)
+	var steering_time := minf(delta, float(_followup.windup) - elapsed)
 	_locked_aim = wrapf(_followup_base_angle + move_toward(current, desired, FOLLOWUP_TURN_RATE * steering_time), -PI, PI)
 	aim_angle = _locked_aim
 
@@ -131,8 +159,8 @@ func charge_grade() -> int:
 func charge_footprint() -> Dictionary:
 	var tier := charge_grade() - 1
 	if skill_id == "mace_gather":
-		return {"area_radius": GATHER_RADII[tier], "arc": TAU}
-	return {"area_radius": _charge_spec.area_radius, "core_radius": _charge_spec.core_radius,
+		return {"area_radius": GATHER_RADII[tier] * _area_scale, "arc": TAU}
+	return {"area_radius": _primary_spec.area_radius, "core_radius": _primary_spec.core_radius,
 		"arc": LEAP_GRADES[tier].arc}
 
 func charge_contact_pose() -> Dictionary:
@@ -150,15 +178,16 @@ func release_charge() -> void:
 	var tier := charge_grade() - 1
 	if skill_id == "mace_gather":
 		elapsed = _charge_pose_time()
-		_charge_spec.area_radius = GATHER_RADII[tier]
-		_charge_spec.slow_fraction = GATHER_SLOWS[tier]
+		_primary_spec.area_radius = GATHER_RADII[tier] * _area_scale
+		_primary_spec.slow_fraction = GATHER_SLOWS[tier]
 	else:
 		_entry_pose = sample()
 		elapsed = 0.0
 		var leap: Dictionary = LEAP_GRADES[tier]
-		_charge_spec.arc = leap.arc
-		_charge_spec.damage = leap.damage
-		_charge_spec.edge_damage = leap.edge_damage
+		_primary_spec.arc = leap.arc
+		_primary_spec.power_ratio = leap.power_ratio
+		_primary_spec.edge_power_ratio = leap.edge_power_ratio
+		_apply_damage(_primary_spec)
 	charging = false
 
 func advance(delta: float) -> Dictionary:

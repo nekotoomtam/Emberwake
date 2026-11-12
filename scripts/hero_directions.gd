@@ -2,17 +2,20 @@ extends RefCounted
 ## Original four-direction body art. Shared combat/weapon art is untouched.
 const Art = preload("res://scripts/pixel_art.gd")
 const DIRECTIONS := ["front","back","left","right"]
+const COMBAT_FRONT_HALF_ANGLE := 38.0
+const TURN_HYSTERESIS := 1.12
 static var cache: Dictionary={}
 static var head_cache: Dictionary={}
 static var paired_cache: Dictionary={}
-static func choose(aim: Vector3,camera: Camera3D,current: String) -> String:
+static func choose(aim: Vector3,camera: Camera3D,current: String,front_half_angle: float=45.0) -> String:
  if aim.length_squared()<.001:return current
  var x: float=camera.global_basis.x.dot(aim)
  var toward := Vector3(camera.global_basis.z.x,0,camera.global_basis.z.z).normalized()
  var y: float=toward.dot(aim)
- if current in ["left","right"] and x*(-1 if current=="left" else 1)>=0 and absf(x)*1.12>=absf(y):return current
- if current in ["front","back"] and y*(-1 if current=="back" else 1)>=0 and absf(y)*1.12>=absf(x):return current
- if absf(x)>absf(y):return "right" if x>0 else "left"
+ var front_weight := absf(y) * tan(deg_to_rad(front_half_angle))
+ if current in ["left","right"] and x*(-1 if current=="left" else 1)>=0 and absf(x)*TURN_HYSTERESIS>=front_weight:return current
+ if current in ["front","back"] and y*(-1 if current=="back" else 1)>=0 and front_weight*TURN_HYSTERESIS>=absf(x):return current
+ if absf(x)>front_weight:return "right" if x>0 else "left"
  return "front" if y>0 else "back"
 static func frames(direction: String,paired: bool=false) -> SpriteFrames:
  if paired:return paired_frames(direction)

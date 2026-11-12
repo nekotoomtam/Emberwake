@@ -78,6 +78,7 @@ func tick(delta: float) -> void:
    return
   walker.visual_offset=world.main_ship_offset(walker.position) if aboard else Vector3.ZERO
   var movement: Vector3=walker.velocity;movement.y=0;walker.update_art(0,movement)
+  world.sea_surface.sync_player_reflection(walker.sprite)
   if shared_seats.seat.is_empty():world.plaza.travel_luggage.update_carry(walker,camera)
   if route_bark_time>0:
    route_bark_time=maxf(0,route_bark_time-delta)
@@ -85,6 +86,7 @@ func tick(delta: float) -> void:
    if route_bark_time<=0:ui.hide_actor_bark()
 func _open_boarding_party() -> void:
  boarding_latched=true
+ world.sea_surface.sync_player_reflection(null)
  walker.enabled=false
  walker.hide()
  ui.show_caption("")
@@ -155,6 +157,7 @@ func skip_arrival() -> void:
  camera.set_view(&"cafe",0);world.hero_offset=.864;world.tick(0,camera)
  world.plaza.travel_luggage.update_stand(1,world.hero,camera);_begin_walk()
 func return_title() -> void:
+ world.sea_surface.sync_player_reflection(null)
  route_bark_time=0;ui.hide_actor_bark()
  shared_seats.release(walker,world)
  world.plaza.update_departure_chair(Vector3.ZERO,false)

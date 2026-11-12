@@ -2,11 +2,11 @@ extends RefCounted
 ## Fine-shafted one-hand flanged mace at the heroine's native world pixel size.
 ## Its small hand, grip, steel neck and compact head remain one rigid +X body.
 
-static var _texture_cache: Texture2D
+static var _texture_cache := {}
 
-static func texture() -> Texture2D:
-	if _texture_cache != null:
-		return _texture_cache
+static func texture(baked_hand: bool = true) -> Texture2D:
+	if _texture_cache.has(baked_hand):
+		return _texture_cache[baked_hand]
 	var image := Image.create(122, 44, false, Image.FORMAT_RGBA8)
 	image.fill(Color.TRANSPARENT)
 	var outline := Color("263141")
@@ -41,9 +41,10 @@ static func texture() -> Texture2D:
 	# A narrow striking face gives the head a blunt end instead of a blade tip.
 	image.fill_rect(Rect2i(114, 12, 4, 20), outline)
 	image.fill_rect(Rect2i(114, 14, 2, 16), steel)
-	image.fill_rect(Rect2i(10, 20, 4, 4), Color("ffd4ad"))
-	_texture_cache = ImageTexture.create_from_image(image)
-	return _texture_cache
+	if baked_hand:
+		image.fill_rect(Rect2i(10, 20, 4, 4), Color("ffd4ad"))
+	_texture_cache[baked_hand] = ImageTexture.create_from_image(image)
+	return _texture_cache[baked_hand]
 
 static func geometry() -> Dictionary:
 	return {"pivot": Vector2(12, 22), "tip": Vector2(118, 22)}

@@ -23,6 +23,9 @@ var ready_visual
 var shot_rng:=RandomNumberGenerator.new()
 var _primary_specs: Dictionary={}
 const RiflePose=preload("res://scripts/rifle_action_pose.gd")
+const RifleMotion = preload("res://scripts/rifle_motion.gd")
+const StaffMotion = preload("res://scripts/staff_motion.gd")
+const StaffGroundSpells = preload("res://scripts/staff_ground_spells.gd")
 const ReloadVisual = preload("res://scripts/reload_visual.gd")
 const DualHandVisual = preload("res://scripts/dual_hand_visual.gd")
 const PairedStrikes = preload("res://scripts/paired_strikes.gd")
@@ -32,6 +35,7 @@ const Motion = preload("res://scripts/weapon_motion.gd")
 const TwinCut = preload("res://scripts/twin_cut_motion.gd")
 const ArmorPierce = preload("res://scripts/armor_pierce_motion.gd")
 const SwordSkillMotion = preload("res://scripts/sword_skill_motion.gd")
+const SwordMotion = preload("res://scripts/sword_motion.gd")
 const MaceSkillMotion = preload("res://scripts/mace_skill_motion.gd")
 const MaceGroundEffects = preload("res://scripts/mace_ground_effects.gd")
 const MaceImpactVisual = preload("res://scripts/mace_impact_visual.gd")
@@ -43,9 +47,17 @@ const SwordSkillUI = preload("res://scripts/sword_skill_ui.gd")
 const Hero = preload("res://scripts/hero_visual.gd")
 var use_cutout_avatar := false
 var expedition_starting_flasks := -1
+const ExpeditionRoster = preload("res://scripts/opening/expedition_roster.gd")
+var expedition_recruit_id := ""
+const Talents = preload("res://scripts/character_talents.gd")
+const TALENT_REWARD_ROOMS := 3
+var _talent_rng := RandomNumberGenerator.new()
+var _last_talent_reward_room := 0
+var expedition_leader_talents: Dictionary = {}
 var expedition_leader_attributes: Dictionary = {}
 var expedition_companions: Array[Dictionary] = []
 const Companion = preload("res://scripts/expedition_companion.gd")
+const FRIENDLY_FIRE_FRACTION := .20
 var companions: Array[Companion] = []
 const REVIVE_DURATION := 1.5
 var revive_target: Companion
@@ -88,15 +100,23 @@ const Magazine = preload("res://scripts/magazine.gd")
 const CasingFX = preload("res://scripts/casing_fx.gd")
 
 var staff_energy=preload("res://scripts/staff_charge.gd").new()
+var _staff_ground := StaffGroundSpells.new()
+var _staff_charge_slot := -1
+var _staff_charge_skill := StaffMotion.CHARGED_FIRE_ID
+var _staff_breath_slot := -1
+var _staff_breath_ticks := 0
+var _staff_breath_elapsed := 0.0
+var _staff_breath_angle := 0.0
+var _staff_breath_bonus := Vector2.ONE
 var staff_orbs
 var status_icons
 var pistol_aim_state=preload("res://scripts/pistol_aim.gd").new()
 var pistol_reticle
+var rifle_scope
 var _shot_spread:=0.0
 var _pistol_shot_bonus:=0.0
 const DualRules=preload("res://scripts/dual_wield_rules.gd")
 var rifle_focus_state=preload("res://scripts/rifle_focus.gd").new()
-var rifle_scope
 var ground_fire
 var brine_zones
 var _staff_committing:=false
@@ -145,6 +165,8 @@ var _mace_skill_motion = MaceSkillMotion.new()
 var _mace_ground := MaceGroundEffects.new()
 var mace_fire_lobs: MaceFireLobs
 var mace_fire_buff_left := 0.0
+var _mace_fire_lift_damage := 0.0
+var _mace_fire_blast_damage := 0.0
 var _mace_fire_next_side := 0
 var _mace_charge_slot := -1
 var _mace_parried_attacker_id := 0
@@ -161,7 +183,7 @@ var _sword_stance_branch := -1
 var sword_skill_cooldowns: Dictionary = {}
 var sword_wave_buff_left := 0.0
 var _storm_blade_item := ""
-var _storm_blade_wave_damage := 1.0
+var _storm_blade_wave_damage := Vector3.ZERO
 var _storm_blade_wave_speed := 1.0
 var _storm_blade_single_swing := false
 var sword_skills_open := false
@@ -171,9 +193,13 @@ var staff_flight: Node3D
 var pistol_magazine = Magazine.new()
 var rifle_magazine = RifleCycle.new()
 var _rifle_pending_fire:=false
+var _rifle_target_origin := Vector3.INF
+var _rifle_target_ray := Vector3.ZERO
+var _rifle_release_height := INF
 var casing_fx: Node3D
 var rifle_recoil_travelled := 0.0
 var _rifle_recoil = ShortLunge.new()
+var _rifle_retreat_distance := 0.0
 const BOW_MEDIUM_TIME := 0.34
 const BOW_FULL_TIME := 0.82
 const BOW_RETREAT_TIME := 0.16
@@ -202,14 +228,14 @@ var wave: int = 0
 var kills: int = 0
 var hits: int = 0
 const SANITY_REVELATION := 100
-const FRENZY_THRESHOLD := 200
-const FRENZY_ATTACK_RANGE := 15.0
-const CRITICAL_SANITY_PER_HIT := 5
-const FRENZY_ROOM_RECOVERY := 30
+const FRENZY_THRESHOLD := ExpeditionRoster.FINAL_STAND_THRESHOLD
+const STAND_UP_SANITY := ExpeditionRoster.STAND_UP_SANITY
+const STAND_UP_HEALTH := ExpeditionRoster.STAND_UP_HEALTH
 var sanity := 0
 var frenzy := false
 var _sanity_marked := false
-var _health_before_frenzy := 0.0
+var character_lost := false
+var _mode_before_fall := "combat"
 var health: float = 100.0
 var mana: float = stats.value("max_mana")
 var stamina: float = 100.0
@@ -250,6 +276,7 @@ var _mouse_position := Vector2.ZERO
 const CAMERA_OFFSET := Vector3(0, 12.5, 11.5)
 
 func _ready() -> void:
+	_talent_rng.randomize()
 	_bind_inputs()
 	shot_rng.randomize();combat_rng.randomize()
 	ready_visual=ReadyVisual.new();add_child(ready_visual)
@@ -276,12 +303,29 @@ func _ready() -> void:
 	add_child(staff_flight)
 	staff_flight.fire_patch.connect(ground_fire.spawn_patch)
 	staff_flight.rifle_hit.connect(_rifle_damage)
+	staff_flight.rifle_armor_hit.connect(_rifle_armor_damage)
+	staff_flight.rifle_mark_hit.connect(_rifle_mark_damage)
+	staff_flight.rifle_pellet_hit.connect(_rifle_pellet_damage)
+	staff_flight.rifle_pellet_impact.connect(func(at: Vector3, color: Color): fx.burst(at, color.lightened(.25), 3))
+	staff_flight.rifle_split.connect(func(at: Vector3, direction: Vector3, reach: float, half_angle: float):
+		fx.burst(at, Color("#fff0c6"), 12)
+		var angle := atan2(direction.z, direction.x)
+		fx.sector(at, reach, angle - half_angle, angle + half_angle, Color(1.0, .55, .25, .36), 0.0, .18)
+		fx.sector(at + Vector3.UP * .015, reach, angle - half_angle, angle + half_angle, Color(1.0, .83, .53, .65), reach - .09, .13)
+		audio.play("bullet_impact"))
+	staff_flight.rifle_pierce_spark.connect(func(point: Vector3): fx.burst(point, Color("#bdeeff"), 8))
 	staff_flight.damage_hit.connect(_projectile_damage)
+	staff_flight.friendly_hit.connect(_friendly_hit)
+	staff_flight.companion_hit.connect(_companion_projectile_damage)
+	staff_flight.ice_volley_hit.connect(_ice_volley_damage)
+	staff_flight.ice_volley_contact.connect(fx.staff_ice_volley_contact)
+	staff_flight.chain_lightning_contact.connect(fx.staff_chain_lightning_contact)
+	staff_flight.lightning_jump.connect(_staff_chain_lightning_jump)
 	staff_flight.sword_wave_hit.connect(_sword_wave_damage)
 	staff_flight.vacuum_wake_segment.connect(fx.vacuum_wake_segment)
 	staff_flight.bolt_hit.connect(_crossbow_hit)
 	staff_flight.impact_element.connect(_projectile_impact)
-	staff_flight.area_impact.connect(_projectile_area_impact)
+	staff_flight.area_visual.connect(_projectile_area_impact)
 	player = CharacterBody3D.new()
 	player.name = "Ember"
 	player.collision_layer = 4
@@ -350,7 +394,7 @@ func _ready() -> void:
 	dual_visual = DualHandVisual.new()
 	player.add_child(dual_visual)
 	if use_cutout_avatar:
-		for rig in dual_visual.rigs:rig.grip_visual.draw_sprites=false
+		for rig in dual_visual.rigs: rig.use_articulated_equipment()
 	loadout_edited()
 	avatar.anatomy=anatomy
 	anatomy_panel=preload("res://scripts/anatomy_panel.gd").new();anatomy_panel.game=self;add_child(anatomy_panel)
@@ -371,7 +415,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
 		if _mace_charge_slot >= 0: _cancel_skill()
 		_cancel_revive()
-		_cancel_great_charge();staff_energy.cancel_actions();_cancel_rifle_action();_cancel_bow();_cancel_crossbow_load()
+		_cancel_great_charge();_cancel_staff_actions();_cancel_rifle_action();_cancel_bow();_cancel_crossbow_load()
 		_held = false
 		readiness.release();pistol_aim_state.reset()
 
@@ -381,7 +425,7 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventKey and not event.pressed:
 		var key: int = event.physical_keycode if event.physical_keycode else event.keycode
 		if key == KEY_E: _cancel_revive()
-		if key in [KEY_1, KEY_2, KEY_3]: release_mace_charge(key - KEY_1)
+		if key in [KEY_1, KEY_2, KEY_3]: release_charged_skill_slot(key - KEY_1)
 	if event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_RIGHT and not event.pressed:
 		readiness.release(true);pistol_aim_state.reset();staff_energy.stop_load()
 	if event is InputEventMouseMotion:
@@ -389,14 +433,17 @@ func _input(event: InputEvent) -> void:
 		if dungeon_peek.visible: dungeon_peek.aim_at(event.position)
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
 		_held = false
+		if _staff_breath_ticks > 0: _stop_staff_breath()
 		if bow_charge >= 0.0: release_bow()
-		if staff_energy.casting:
-			if mode in ["practice","combat"] and not inventory_open and not stats_open:release_staff_cast()
-			else:staff_energy.cancel_actions()
 		if mode in ["practice","combat"] and not inventory_open and not stats_open:release_great_charge()
 		else:_cancel_great_charge()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if mode == "downed":
+		if event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_E or event.keycode == KEY_E):
+			stand_up()
+		get_viewport().set_input_as_handled()
+		return
 	if _room_fade != null:
 		get_viewport().set_input_as_handled()
 		return
@@ -454,8 +501,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if mode in ["practice", "combat"]:
+			if primary_family() == "rifle": _mouse_position = event.position
 			if primary_family()=="staff":
-				begin_staff_cast();get_viewport().set_input_as_handled();return
+				if _staff_breath_slot >= 0: _start_staff_breath()
+				else: request_staff_basic()
+				get_viewport().set_input_as_handled();return
 			if primary_family() in ["bow", "crossbow"]:
 				request_attack();get_viewport().set_input_as_handled();return
 			_held = true
@@ -468,7 +518,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_1, KEY_2, KEY_3: request_skill_slot(key - KEY_1, true)
 			KEY_SPACE: request_dodge()
 			KEY_ESCAPE: toggle_pause()
-			KEY_R: request_reload()
+			KEY_R:
+				if primary_family() == "staff": cycle_staff_element()
+				else: request_reload()
 			KEY_Q: request_loadout_swap()
 			KEY_F: use_health_flask()
 			KEY_E:
@@ -541,8 +593,9 @@ func start_coast() -> void:
 func finish_coast() -> void:
 	mace_fire_lobs.clear()
 	mace_fire_buff_left = 0.0
-	_cancel_body_actions();clear_hostile_projectiles();fx.clear_transients();staff_flight.clear();ground_fire.clear();_mace_ground.clear();casing_fx.clear();reset_gun_magazines();_held=false;mode="victory";audio.play("victory");ui.show_mode(mode)
+	_cancel_body_actions();clear_hostile_projectiles();fx.clear_transients();staff_flight.clear();ground_fire.clear();_staff_ground.clear();_mace_ground.clear();casing_fx.clear();reset_gun_magazines();_held=false;mode="victory";audio.play("victory");ui.show_mode(mode)
 func start_dungeon(seed_value: int = -1) -> void:
+	if character_lost and not expedition_recruit_id.is_empty(): return
 	start_run(true)
 	_apply_expedition_attributes()
 	if expedition_starting_flasks >= 0:
@@ -617,8 +670,13 @@ func _set_arena(harbor: bool) -> void:
 	if harbor==_harbor_mode and not _coast_mode and encounter_mode!="dungeon":return
 	arena.free();arena=HarborArena.new() if harbor else Arena.new();add_child(arena);_harbor_mode=harbor;_coast_mode=false
 func start_run(practice: bool = false,harbor: bool=false) -> void:
+	if character_lost and not expedition_recruit_id.is_empty(): return
 	_end_room_fade()
 	stats.attributes = {}
+	stats.set_talents({})
+	_last_talent_reward_room = 0
+	flasks.healing_multiplier = 1.0
+	stats.level = 1
 	for companion in companions:
 		remove_child(companion)
 		companion.queue_free()
@@ -627,7 +685,7 @@ func start_run(practice: bool = false,harbor: bool=false) -> void:
 	sanity = 0
 	frenzy = false
 	_sanity_marked = false
-	_health_before_frenzy = 0.0
+	character_lost = false
 	anatomy.bind_max_hp(stats.value("max_health"));anatomy.reset();flasks.reset();body_lab_open=false;_crawl_still=.25;_body_key=anatomy.capability_key()
 	readiness.reset();rewards.reset();energy.reset()
 	sword_skill_cooldowns.clear()
@@ -690,7 +748,8 @@ func clear_actors() -> void:
 	if is_instance_valid(brine_zones):brine_zones.clear()
 	rifle_focus_state.reset();pistol_aim_state.reset()
 	_rifle_pending_fire=false
-	staff_energy.reset()
+	_stop_staff_breath();staff_energy.reset()
+	_staff_ground.clear()
 	_cancel_bow()
 	_cancel_crossbow_load()
 	_cancel_skill()
@@ -711,6 +770,7 @@ func clear_actors() -> void:
 	projectiles.clear()
 
 func restart() -> void:
+	if mode == "downed" or (character_lost and not expedition_recruit_id.is_empty()): return
 	if encounter_mode=="wreck_shore":start_wreck_shore()
 	elif encounter_mode=="coast_forms":start_coast_forms()
 	elif encounter_mode=="village_study":start_village_study()
@@ -726,6 +786,9 @@ func restart() -> void:
 	else:start_run(_practice)
 
 func return_menu() -> void:
+	if character_lost and not expedition_recruit_id.is_empty():
+		get_tree().change_scene_to_file("res://scenes/prologue.tscn")
+		return
 	sword_wave_buff_left = 0.0
 	flasks.cancel_effects()
 	readiness.release();pistol_aim_state.reset()
@@ -747,7 +810,7 @@ func toggle_pause() -> void:
 	_cancel_bow()
 	_cancel_crossbow_load()
 	_cancel_rifle_action()
-	staff_energy.cancel_actions()
+	_cancel_staff_actions()
 	_cancel_great_charge()
 	readiness.release();pistol_aim_state.reset()
 	_held = false
@@ -760,23 +823,50 @@ func toggle_pause() -> void:
 	else:
 		return
 	ui.show_mode(mode)
-	if is_instance_valid(rifle_scope):rifle_scope.update_view(self)
 	pistol_reticle.update_view(self)
+	rifle_scope.update_view(self)
 
 func _refresh_aim(allow_locked: bool = false) -> void:
-	if motion.busy and not motion.is_great_charging() and not allow_locked: return
+	var rifle_charging := rifle_finisher_charging()
+	if motion.busy and not motion.is_great_charging() and not rifle_charging and not allow_locked: return
 	if test_aim.length_squared() > 0.001:
 		aim = Vector3(test_aim.x, 0, test_aim.z).normalized()
 	else:
-		var origin := camera.project_ray_origin(_mouse_position)
-		var ray := camera.project_ray_normal(_mouse_position)
-		if absf(ray.y) > 0.001:
-			var point: Vector3 = origin + ray * (-origin.y / ray.y)
+		var height := rifle_cursor_height() if rifle_aiming() else 0.0
+		var point := cursor_world_at_height(height)
+		if point.is_finite():
 			var direction := point - player.global_position
 			direction.y = 0
 			if direction.length_squared() > 0.1: aim = direction.normalized()
 	if motion.is_great_charging():motion.retarget_charge(atan2(aim.z,aim.x))
+	elif rifle_charging:
+		_capture_rifle_target()
+		_basic_motion.retarget_rifle_finisher(atan2(aim.z,aim.x))
 	elif not motion.busy:motion.rebase_idle_aim(atan2(aim.z, aim.x))
+
+func cursor_world_at_height(height: float) -> Vector3:
+	return _point_on_cursor_ray(camera.project_ray_origin(_mouse_position), camera.project_ray_normal(_mouse_position), height)
+
+func rifle_cursor_height() -> float:
+	return player.global_position.y + (RifleMotion.RAISED_AIM_HEIGHT if avatar.articulated_equipment else RifleMotion.AIM_HEIGHT)
+
+func _point_on_cursor_ray(origin: Vector3, ray: Vector3, height: float) -> Vector3:
+	if not origin.is_finite() or absf(ray.y) <= .001: return Vector3.INF
+	return origin + ray * ((height - origin.y) / ray.y)
+
+func _capture_rifle_target() -> void:
+	_rifle_target_origin = Vector3.INF
+	if test_aim.length_squared() > .001: return
+	_rifle_target_origin = camera.project_ray_origin(_mouse_position)
+	_rifle_target_ray = camera.project_ray_normal(_mouse_position)
+
+func locked_rifle_reticle() -> Vector2:
+	if primary_family() != "rifle" or not motion.busy or not _rifle_target_origin.is_finite(): return Vector2.INF
+	var pose: Dictionary = motion.sample()
+	if pose.phase not in ["windup", "active"]: return Vector2.INF
+	var height := _rifle_release_height if is_finite(_rifle_release_height) else _aimed_rifle_muzzle(_staff_tip(pose)).y
+	var point := _point_on_cursor_ray(_rifle_target_origin, _rifle_target_ray, height)
+	return camera.unproject_position(point) if point.is_finite() else Vector2.INF
 
 func _relax_idle_pose() -> void:
 	if motion.busy: return
@@ -791,7 +881,7 @@ func request_attack() -> bool:
 	if primary_family() == "shield": return false
 	if primary_family() == "bow": return _begin_bow()
 	if primary_family() == "crossbow": return _fire_crossbow()
-	if primary_family()=="staff" and not _staff_committing:return begin_staff_cast()
+	if primary_family()=="staff" and not _staff_committing:return request_staff_basic()
 	if right_action()=="guard" or readiness.broken_left>0:return false
 	if inventory_open or stats_open or pair_strikes.active:return false
 	if mode not in ["practice","combat"] or anatomy.dead() or motion.busy or _dodge_left>0:return false
@@ -827,17 +917,18 @@ func request_attack() -> bool:
 	if weapon_family=="greatsword":_held=false
 	return true
 
-func _start_weapon_attack(index: int,counter: bool=false) -> bool:
+func _start_weapon_attack(index: int,counter: bool=false,rifle_finisher: bool=false) -> bool:
 	if not active_weapon_possible() or not body_action_ready():return false
 	if weapon_family=="rifle" and not active_magazine().can_fire():return false
 	if weapon_family in ["pistol", "rifle"] and not active_magazine().can_fire():
 		request_reload()
 		return false
-	var energy_cost:=0.0 if weapon_family=="staff" else attack_cost(weapon_family,index,_pair_aimed)
+	var energy_cost:=0.0 if weapon_family=="staff" or rifle_finisher else attack_cost(weapon_family,index,_pair_aimed)
 	if not _can_spend(energy_cost):return false
 	_relax_idle_pose()
 	_refresh_aim()
 	var attack_stage := index
+	if weapon_family == "sword": motion.configure_sword_power(sword_weapon_power())
 	var fire_lift: bool = weapon_family == "mace" and primary_family() == "mace" and mace_fire_buff_left > 0.0 and not pair_strikes.active
 	if fire_lift: attack_stage = _mace_fire_next_side
 	if weapon_family in ["staff", "pistol", "rifle"]: attack_stage = 0
@@ -848,11 +939,17 @@ func _start_weapon_attack(index: int,counter: bool=false) -> bool:
 		if plan.assisted: attack_aim = plan.direction
 	if counter and weapon_family=="greatsword":motion.great_charge.prime_finisher(3)
 	if weapon_family=="rifle":
-		motion.configure_rifle(_pair_aimed);active_magazine().configure_shot(_pair_aimed)
+		var cycle = active_magazine()
+		_rifle_target_origin = Vector3.INF
+		_rifle_release_height = INF
+		if _pair_aimed or rifle_finisher: _capture_rifle_target()
+		var handling := RifleMotion.time_scale(stats.attributes, float(rifle_weapon_stats().handling))
+		motion.configure_rifle(_pair_aimed or rifle_finisher, cycle.rapid_fire_left > 0.0, rifle_finisher, handling)
+		cycle.configure_shot(_pair_aimed or rifle_finisher, 1.0 if rifle_finisher else handling)
 	_pistol_shot_bonus=pistol_aim_state.speed_bonus() if weapon_family=="pistol" and _pair_aimed and readiness.held else 0.0
 	var attack_angle := atan2(attack_aim.z, attack_aim.x)
 	if fire_lift:
-		if not motion.start_mace_fire_lift(attack_stage, attack_angle): return false
+		if not motion.start_mace_fire_lift(attack_stage, attack_angle, _mace_fire_lift_damage): return false
 		_mace_fire_next_side = 1 - _mace_fire_next_side
 	else:
 		if not motion.start(attack_stage, attack_angle): return false
@@ -869,6 +966,7 @@ func _start_weapon_attack(index: int,counter: bool=false) -> bool:
 	attack_step_travelled = 0.0
 	if weapon_family == "rifle":
 		_rifle_recoil.reset()
+		_rifle_retreat_distance = 0.0
 		rifle_recoil_travelled = 0
 	if weapon_family == "mace" and _next_combo in [0, 1]:
 		_short_lunge.reset()
@@ -900,19 +998,19 @@ func _begin_skill(id: String) -> bool:
 	if inventory_open or stats_open or body_lab_open: return false
 	if mode not in ["practice", "combat"] or anatomy.dead() or skill_active or motion.busy or _dodge_left > 0 or guns_reloading(): return false
 	var skill: Dictionary = MaceSkillMotion.SKILLS[id] if mace_skill else SwordSkillMotion.SKILLS[id]
-	var cost: float = skill.cost if mace_skill else SwordSkillMotion.mana_cost(id, stats.attributes)
+	var cost: float = (float(skill.cost) if mace_skill else SwordSkillMotion.mana_cost(id, stats.attributes)) * stats.talent_factor("skill_mana")
 	if mana < cost: return false
 	if loadout_mode and not _select_loadout_item(_body_default_item()): return false
 	_refresh_aim()
 	var skill_motion = _mace_skill_motion if mace_skill else _sword_skill_motion
 	if mace_skill:
-		if not _mace_skill_motion.configure(id, motion.sample()): return false
+		if not _mace_skill_motion.configure(id, motion.sample(), mace_weapon_power(), float(stats.attributes.get("strength", 3)), stats.talent_factor("skill_area"), stats.talent_factor("area_windup")): return false
 	else:
-		if not _sword_skill_motion.configure(id, stats.attributes): return false
+		if not _sword_skill_motion.configure(id, stats.attributes, sword_weapon_power(), stats.talent_factor("skill_area"), stats.talent_factor("area_windup")): return false
 		_sword_skill_motion.seed_pose(motion.sample())
 	if not skill_motion.start(0, atan2(aim.z, aim.x)): return false
 	mana -= cost
-	sword_skill_cooldowns[id] = float(skill.cooldown)
+	sword_skill_cooldowns[id] = float(skill.cooldown) * stats.talent_factor("skill_cooldown")
 	motion = skill_motion
 	active_skill_id = id
 	_skill_generation += 1
@@ -935,13 +1033,70 @@ func _begin_skill(id: String) -> bool:
 	return true
 
 func request_skill_slot(index: int, hold_charge: bool = false) -> bool:
-	var slots: Array = loadout.mace_skill_slots if primary_family() == "mace" else loadout.skill_slots
+	var family := primary_family()
+	var slots: Array = loadout.slots_for_family(family)
 	if index < 0 or index >= slots.size(): return false
+	if family == "rifle":
+		return _use_rifle_skill(str(slots[index]))
+	if family == "staff":
+		if slots[index] == StaffMotion.FOCUS_ID:
+			return _activate_staff_focus()
+		if slots[index] == StaffMotion.FIRE_BREATH_ID:
+			return _arm_staff_breath(index)
+		if not begin_staff_cast(slots[index]): return false
+		_staff_charge_slot = index
+		return true
 	if not _begin_skill(str(slots[index])): return false
 	if hold_charge and MaceSkillMotion.SKILLS.get(slots[index], {}).get("chargeable", false):
 		_mace_skill_motion.charging = true
 		_mace_charge_slot = index
 	return true
+
+func _use_rifle_skill(id: String) -> bool:
+	if not RifleMotion.SKILLS.has(id): return false
+	var skill: Dictionary = RifleMotion.SKILLS[id]
+	var refill := int(skill.get("refill", 0))
+	var duration := float(skill.get("duration", 0.0))
+	var cost: float = RifleMotion.skill_cost(id, stats.attributes) * stats.talent_factor("skill_mana")
+	var cooldown: float = RifleMotion.skill_cooldown(id, stats.level) * stats.talent_factor("skill_cooldown")
+	if not rifle_skills_available(id): return false
+	if mana < cost or float(sword_skill_cooldowns.get(id, 0.0)) > 0.0: return false
+	var cycle = active_magazine()
+	if not cycle is RifleCycle: return false
+	if id == RifleMotion.FINISHER_ID:
+		if loadout_mode and not _select_loadout_item(loadout.primary()): return false
+		if not _start_weapon_attack(0, false, true): return false
+		_held = false
+		_rifle_pending_fire = false
+		sword_skill_cooldowns[id] = cooldown
+	elif duration > 0.0:
+		cycle.rapid_fire_left = duration
+		sword_skill_cooldowns[id] = cooldown
+		ui.start_rifle_rapid_gears()
+	elif refill > 0:
+		if not cycle.refill_now(refill): return false
+		_rifle_pending_fire = false
+		reload_visual.cancel()
+		_rifle_events(cycle)
+		for i in refill: ui.turn_rifle_gears(true)
+		sword_skill_cooldowns[id] = cooldown
+	else:
+		if not cycle.prepare_round(id, int(skill.get("rounds", 1))): return false
+		_refresh_aim()
+		var receiver := _staff_tip(_hand_pose(current_visual_sample())) - aim * .90
+		if avatar.articulated_equipment and avatar.weapon_family == "rifle":
+			receiver = avatar.rifle_receiver()
+		fx.rifle_load_round(receiver, aim, camera, id)
+	mana -= cost
+	audio.play("charge" if id == RifleMotion.FINISHER_ID else ("equip" if duration > 0.0 else "rifle_insert"))
+	ui.refresh()
+	return true
+
+func release_charged_skill_slot(index: int) -> void:
+	if staff_energy.casting and index == _staff_charge_slot:
+		if not release_staff_cast(): _cancel_staff_actions()
+		return
+	release_mace_charge(index)
 
 func release_mace_charge(index: int) -> void:
 	if index != _mace_charge_slot or not _mace_skill_motion.charging: return
@@ -955,7 +1110,7 @@ func release_mace_charge(index: int) -> void:
 		_mace_skill_motion.steer_charge(_mace_leap_angle(_mace_leap_offset), 1.0)
 	_mace_ground.clear_landing()
 	_mace_skill_motion.release_charge()
-	sword_skill_cooldowns[active_skill_id] = float(MaceSkillMotion.SKILLS[active_skill_id].cooldown)
+	sword_skill_cooldowns[active_skill_id] = float(MaceSkillMotion.SKILLS[active_skill_id].cooldown) * stats.talent_factor("skill_cooldown")
 
 func mace_charge_grade(index: int) -> int:
 	return _mace_skill_motion.charge_grade() if index == _mace_charge_slot else 0
@@ -970,7 +1125,7 @@ func toggle_sword_skills() -> void:
 	_cancel_bow()
 	_cancel_crossbow_load()
 	_cancel_rifle_action()
-	staff_energy.cancel_actions()
+	_cancel_staff_actions()
 	readiness.release()
 	_held = false
 	sword_skills_open = true
@@ -1000,7 +1155,7 @@ func _start_skill_stage(index: int) -> void:
 
 func _cancel_skill() -> void:
 	_double_slash_first_hits.clear()
-	staff_energy.cancel_actions()
+	_cancel_staff_actions()
 	pair_strikes.cancel()
 	_skill_generation += 1
 	if skill_active:
@@ -1056,15 +1211,18 @@ func request_reload() -> bool:
 	return true
 
 func request_dodge(direction: Vector3 = Vector3.ZERO) -> bool:
+	if rifle_finisher_charging(): return false
+	if motion == _basic_motion and weapon_family == "rifle" and motion.busy and motion.definition(0).get("rifle_finisher", false) and motion.elapsed < RifleMotion.FINISHER_CHARGE + DashVisual.DURATION * 1.5: return false
 	if encounter_mode=="wreck_shore" and not arena.intro_done():return false
 	if anatomy.dash_multiplier()<=0 or body_lab_open:return false
 	if inventory_open or stats_open or body_lab_open: return false
 	if mode not in ["practice", "combat"] or anatomy.dead() or _dodge_left > 0 or _dodge_recharge > 0:
 		return false
-	if not _can_spend(rewards.DODGE_COST*stats.value("stamina_cost_multiplier")*anatomy.action_cost_multiplier()*anatomy.dash_cost_multiplier()):return false
+	var dodge_cost: float = rewards.DODGE_COST * stats.value("stamina_cost_multiplier") * anatomy.action_cost_multiplier() * anatomy.dash_cost_multiplier() * stats.talent_factor("dash_cost")
+	if not _can_spend(dodge_cost): return false
 	_cancel_revive()
 	var keep_rifle_aim: bool=primary_family()=="rifle" and readiness.held
-	readiness.release();pistol_aim_state.reset();staff_energy.cancel_actions();_cancel_rifle_action();_cancel_bow();_cancel_crossbow_load()
+	readiness.release();pistol_aim_state.reset();_cancel_staff_actions();_cancel_rifle_action();_cancel_bow();_cancel_crossbow_load()
 	_cancel_skill()
 	motion.reset()
 	_refresh_aim()
@@ -1084,7 +1242,7 @@ func request_dodge(direction: Vector3 = Vector3.ZERO) -> bool:
 	_dodge_dir = direction.normalized() if direction.length_squared() > 0.001 else (movement.normalized() if movement.length_squared() > 0.001 else aim)
 	_dodge_dir.y = 0
 	_dodge_facing = aim
-	_spend_stamina(rewards.DODGE_COST*stats.value("stamina_cost_multiplier")*anatomy.action_cost_multiplier()*anatomy.dash_cost_multiplier())
+	_spend_stamina(dodge_cost)
 	_dodge_left = DashVisual.DURATION
 	if anatomy.leg_count()==0:_crawl_still=0
 	_dodge_recharge = rewards.DODGE_RECHARGE
@@ -1111,6 +1269,7 @@ func set_arrival_lock(locked: bool) -> void:
 func _movement() -> Vector3:
 	if _arrival_locked:
 		return arrival_motion
+	if rifle_finisher_charging(): return Vector3.ZERO
 	if encounter_mode=="wreck_shore" and not arena.intro_done():return Vector3.ZERO
 	var input := move_input if move_input.length_squared() > 0 else Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	var right := camera.global_basis.x
@@ -1143,6 +1302,7 @@ func tick(delta: float) -> void:
 		if mode in ["practice", "combat"] and not _mace_ground.echoes.is_empty():
 			part = minf(part, maxf(.00000001, _mace_ground.echoes[0].remaining))
 		if mode in ["practice","combat"] and _hit_stop<=0:
+			part = minf(part, _staff_ground.time_to_boundary())
 			if sword_wave_buff_left > 0.0: part = minf(part, sword_wave_buff_left)
 			if _dodge_left>.0000001:part=minf(part,_dodge_left)
 			if primary_family()=="rifle" and active_magazine().bolt_active:
@@ -1163,7 +1323,7 @@ func tick(delta: float) -> void:
 			for magazine in [pistol_magazine,rifle_magazine]+item_magazines.values():
 				if magazine.reloading:
 					var boundary: float=magazine.next_boundary() if magazine.has_method("next_boundary") else magazine.reload_duration-magazine.elapsed
-					part=minf(part,maxf(.00000001,boundary/reload_rate()))
+					part=minf(part,maxf(.00000001,boundary/reload_rate(magazine)))
 		# Resolve real impact boundaries before expiring a fresh parry window.
 		if mode in ["practice","combat"] and _hit_stop<=0:
 			for window in [rewards.PERFECT_WINDOW,rewards.DODGE_IFRAMES]:
@@ -1242,6 +1402,7 @@ func _tick_frame(delta: float) -> void:
 	run_time += delta
 	_mace_ground.advance_rift(delta)
 	mana = minf(stats.value("max_mana"), mana + stats.value("mana_regen") * delta)
+	staff_energy.focus_left = maxf(0.0, staff_energy.focus_left - delta)
 	var expiring_storm_rate := 0.0
 	if motion.busy and sword_wave_buff_left <= delta and _storm_blade_has_current_sword():
 		expiring_storm_rate = attack_rate()
@@ -1264,6 +1425,7 @@ func _tick_frame(delta: float) -> void:
 		return
 	# Expire statuses at this simulation instant before any contact resolves.
 	# Hitstop and paused modes reach neither this pass nor Enemy.tick.
+	var staff_impacts := _staff_ground.advance(delta, camera)
 	for enemy in enemies:
 		if is_instance_valid(enemy) and enemy.has_method("advance_combat_status"):
 			enemy.advance_combat_status(delta)
@@ -1272,7 +1434,7 @@ func _tick_frame(delta: float) -> void:
 				while enemy.crossbow_wound_time >= 1.0 and enemy.crossbow_wound_ticks > 0 and not enemy.dead:
 					enemy.crossbow_wound_time -= 1.0
 					enemy.crossbow_wound_ticks -= 1
-					enemy_hit(enemy, 5.0, Vector3.ZERO, "physical", -1.0, true)
+					enemy_hit(enemy, 5.0, Vector3.ZERO, "physical", -1.0, true, "", enemy.crossbow_wound_from_player)
 	if _crossbow_loading != null:
 		if not _crossbow_allowed(): _cancel_crossbow_load()
 		elif _crossbow_loading.tick(delta * reload_rate()):
@@ -1288,13 +1450,18 @@ func _tick_frame(delta: float) -> void:
 		if _bow_allowed(): bow_charge = minf(BOW_FULL_TIME, bow_charge + delta * attack_rate())
 		else: _cancel_bow()
 	var staff_was_busy: bool=staff_energy.loading or staff_energy.casting
-	var before_tier: int=staff_energy.level()
-	var gained: int=staff_energy.advance(delta*attack_rate(),Callable(self,"_staff_pay_unit")) if primary_family()=="staff" else 0
+	var cast_was_ready: bool=staff_energy.cast_ready()
+	var previous_staff_element: String=staff_energy.element
+	var gained: int=staff_energy.advance(delta,Callable(self,"_staff_pay_unit"),attack_rate()) if primary_family()=="staff" else 0
+	if staff_energy.element != previous_staff_element:
+		var staff_tip := _staff_tip(_hand_pose(current_visual_sample()))
+		fx.burst(staff_tip, staff_energy.ELEMENT_COLORS[staff_energy.element], 9)
+		audio.play("ui")
 	if gained>0:audio.play("staff_charge%d"%staff_energy.units)
-	elif staff_energy.casting and staff_energy.level()>before_tier:audio.play("staff_charge%d"%staff_energy.level())
-	ground_fire.tick(delta,enemies,player.get_world_3d())
+	elif staff_energy.cast_ready() and not cast_was_ready:audio.play("staff_charge3")
+	ground_fire.tick(delta,_player_attack_targets(),player.get_world_3d())
 	mace_fire_lobs.tick(delta, camera, player.get_world_3d())
-	var energy_busy: bool=_crossbow_loading != null or bow_charge >= 0.0 or _bow_recovery > 0.0 or motion.busy or pair_strikes.active or _dodge_left>0 or staff_was_busy or staff_energy.loading or staff_energy.casting or (primary_family()=="rifle" and active_magazine().bolt_active)
+	var energy_busy: bool=_crossbow_loading != null or bow_charge >= 0.0 or _bow_recovery > 0.0 or motion.busy or pair_strikes.active or _dodge_left>0 or staff_was_busy or staff_energy.loading or staff_energy.casting or _staff_breath_ticks > 0 or (primary_family()=="rifle" and active_magazine().bolt_active)
 	_hurt = maxf(0, _hurt - delta)
 	_iframes = maxf(0, _iframes - delta)
 	_dodge_recharge = maxf(0, _dodge_recharge - delta)
@@ -1302,16 +1469,17 @@ func _tick_frame(delta: float) -> void:
 	var before_energy: float=stamina
 	stamina=energy.recover(stamina,delta,stats,energy_busy,right_action() in ["aim","guard"] or guns_reloading())
 	if not anatomy.functional("torso"):stamina=before_energy+(stamina-before_energy)*.25
-	if not frenzy:
-		health = flasks.advance(delta, health, max_health())
-		health = minf(max_health(), health + stats.value("health_regen") * delta)
+	health = flasks.advance(delta, health, max_health())
+	health = minf(max_health(), health + stats.value("health_regen") * delta)
 	var rifle_ready_this_frame:=false
 	var current_mag=active_magazine()
 	if primary_family()=="rifle" and current_mag.bolt_active:
 		current_mag.tick_bolt(delta*attack_rate());rifle_ready_this_frame=not current_mag.bolt_active
 	for magazine in [pistol_magazine, rifle_magazine] + item_magazines.values():
+		if magazine is RifleCycle:
+			magazine.rapid_fire_left = maxf(0.0, magazine.rapid_fire_left - delta)
 		var was_reloading: bool=magazine.reloading
-		var completed: bool=magazine.tick(delta*reload_rate())
+		var completed: bool=magazine.tick(delta*reload_rate(magazine)) if was_reloading else false
 		if was_reloading and reload_visual.active and magazine==active_magazine() and not magazine.has_method("start_bolt"):
 			for cue in reload_visual.events(magazine.progress()):audio.play(cue)
 		if magazine.has_method("start_bolt"):_rifle_events(magazine)
@@ -1349,7 +1517,7 @@ func _tick_frame(delta: float) -> void:
 	var sample: Dictionary = _hand_pose(motion.sample())
 	var sword_wave_release: Dictionary = {}
 	if step.entered_active and _storm_blade_can_release():
-		sword_wave_release = {"damage": (12.0 + motion.stage * 2.0) * _storm_blade_wave_damage,
+		sword_wave_release = {"damage": _storm_blade_wave_damage[motion.stage],
 			"projectile_speed": 12.0 * _storm_blade_wave_speed, "projectile_range": 7.0, "projectile_radius": .7}
 	if skill_active and motion == _sword_skill_motion:
 		var skill_definition: Dictionary = motion.definition(motion.stage)
@@ -1364,7 +1532,7 @@ func _tick_frame(delta: float) -> void:
 		if step.entered_active and active_skill_id == "storm_blade":
 			sword_wave_buff_left = float(skill_definition.buff_duration)
 			_storm_blade_item = active_item if loadout_mode else ""
-			_storm_blade_wave_damage = float(skill_definition.wave_damage_multiplier)
+			_storm_blade_wave_damage = skill_definition.wave_damage
 			_storm_blade_wave_speed = float(skill_definition.wave_speed_multiplier)
 			fx.ring(player.position, 1.0, Color(.3, .9, 1.0, .9), .35)
 		if step.entered_active and skill_definition.kind == "thrust":
@@ -1382,7 +1550,10 @@ func _tick_frame(delta: float) -> void:
 	attack_step_travelled = _attack_step.travelled
 	var rifle_release: Dictionary = {}
 	if weapon_family == "rifle" and motion.stage == 0:
-		_apply_rifle_recoil(sample.get("recoil_offset", 0.0))
+		var retreat_releasing: bool = step.get("projectile_ready", false) and (
+			motion.definition(0).get("rifle_finisher", false) or active_magazine().next_round().get("id") == RifleMotion.SCATTER_ROUND_ID)
+		if not retreat_releasing:
+			_apply_rifle_recoil(sample.get("recoil_offset", 0.0))
 	if weapon_family in ["staff", "pistol", "rifle"] and step.get("projectile_ready", false):
 		if weapon_family == "rifle":
 			rifle_release = step.release_pose
@@ -1468,8 +1639,9 @@ func _tick_frame(delta: float) -> void:
 					fx.burst(tip + Vector3(0, 0.07, 0), Color("#ffd18b"), 12)
 				audio.play("slam")
 				_shake = maxf(_shake, 0.025)
-			for enemy in enemies:
-				if not is_instance_valid(enemy) or enemy.dead or _hit_targets.has(enemy.get_instance_id()): continue
+			for enemy in _player_attack_targets():
+				if not _can_hit_player_target(enemy) or _hit_targets.has(enemy.get_instance_id()): continue
+				if enemy is Companion and not _armor_line_clear(enemy): continue
 				if active_skill_id == "armor_pierce" and not _armor_line_clear(enemy): continue
 				if skill_active and motion == _sword_skill_motion and not _armor_line_clear(enemy): continue
 				var region: String=_melee_contact_region(enemy,step)
@@ -1487,7 +1659,11 @@ func _tick_frame(delta: float) -> void:
 					if weapon_family == "greatsword" and motion.stage == 2:
 						stagger = float(definition.get("stagger", -1.0))
 					var health_before: float = enemy.health
-					enemy_hit(enemy, definition.damage, hit_direction * force, "", stagger, false, region)
+					var damage: float = definition.damage * (stats.talent_factor("melee_damage") if _is_normal_melee() else 1.0)
+					enemy_hit(enemy, damage, hit_direction * force, "", stagger, false, region)
+					if enemy is Companion:
+						if ground_impact.is_finite(): _record_mace_slam_hit(slam_hits, enemy, health_before)
+						continue
 					if armor_stacks > 0 and _skill_generation == contact_generation and mode == contact_mode:
 						_apply_skill_armor_stacks(enemy, health_before, armor_stacks)
 					if ground_impact.is_finite(): _record_mace_slam_hit(slam_hits, enemy, health_before)
@@ -1522,8 +1698,17 @@ func _tick_frame(delta: float) -> void:
 	if debug_range and not mace_skill and motion.busy and _range_clock <= 0:
 		var definition: Dictionary = motion.definition(motion.stage)
 		if weapon_family in ["staff", "pistol", "rifle"]:
-			var muzzle: Vector3 = _staff_tip(sample)
-			fx.lane(Vector3(muzzle.x, player.position.y, muzzle.z), motion.aim_angle, definition.projectile_range, definition.projectile_radius * 2.0, Color(1.0, 0.53, 0.2, 0.16), 0.06)
+			var muzzle := _staff_tip(sample)
+			var start := Vector3(muzzle.x, player.position.y, muzzle.z)
+			var angle: float = motion.aim_angle
+			if weapon_family == "rifle" and definition.get("rifle_aimed", false):
+				var line := aimed_rifle_line(sample)
+				start = line.origin - Vector3.UP * .036
+				angle = atan2(line.direction.z, line.direction.x)
+				var round_id: String = RifleMotion.FINISHER_ID if definition.get("rifle_finisher", false) else active_magazine().next_round().get("id", "")
+				definition.merge(rifle_projectile_profile(round_id), true)
+			for offset: float in definition.get("scatter_angles", [0.0]):
+				fx.lane(start, angle + deg_to_rad(offset), definition.projectile_range, definition.projectile_radius * 2.0, Color(1.0, 0.53, 0.2, 0.16), 0.06)
 		elif definition.get("kind", "sweep") in ["lift", "lunge", "slam"]:
 			fx.lane(_hand_origin(), motion.aim_angle, definition.reach, definition.width, Color(0.3, 0.9, 0.8, 0.14), 0.06)
 		else:
@@ -1539,6 +1724,7 @@ func _tick_frame(delta: float) -> void:
 		speed = 1.4 if active_skill_id == "square_off" and motion.stage == 0 else 0.0
 		if _mace_charge_slot >= 0: speed = MACE_CHARGE_WALK_SPEED
 	if staff_energy.loading or staff_energy.casting or bow_charge >= 0.0 or _crossbow_loading != null:speed=minf(speed,4.7*.55)
+	if _staff_breath_ticks > 0: speed = minf(speed, 4.7 * .45)
 	if _bow_recovery > 0.0:
 		speed = 0.0
 		_bow_recovery = maxf(0.0, _bow_recovery - delta)
@@ -1548,11 +1734,11 @@ func _tick_frame(delta: float) -> void:
 	if right_action()=="aim":speed=minf(speed,4.7*.55)
 	elif right_action()=="guard":speed=minf(speed,4.7*.45)
 	if readiness.broken_left>0:speed=minf(speed,4.7*.25)
-	if anatomy.leg_count()==0 and (motion.busy or staff_energy.loading or staff_energy.casting or guns_reloading() or right_action()!=""):speed=0
+	if anatomy.leg_count()==0 and (motion.busy or staff_energy.loading or staff_energy.casting or _staff_breath_ticks > 0 or guns_reloading() or right_action()!=""):speed=0
 	player.velocity = movement * speed*stats.value("move_speed")*anatomy.move_multiplier()
 	if encounter_mode == "dungeon" and is_instance_valid(arena.hazards):
 		player.velocity *= arena.hazards.speed_scale(player.global_position)
-	if _dodge_left > 0: player.velocity = _dodge_dir * rewards.DODGE_SPEED*anatomy.dash_multiplier()
+	if _dodge_left > 0: player.velocity = _dodge_dir * rewards.DODGE_SPEED * anatomy.dash_multiplier() * stats.talent_factor("dash_distance")
 	player.velocity.y = -2
 	player.move_and_slide()
 	if skill_active and active_skill_id == "stormcaller" and not step.active:
@@ -1589,11 +1775,14 @@ func _tick_frame(delta: float) -> void:
 	_enemy_tick_phase=false
 	_crowd_index_active=false
 	_update_projectiles(delta)
-	staff_flight.tick(delta, enemies, get_world_3d(), Callable(), camera)
+	_resolve_staff_ground_impacts(staff_impacts)
+	var breath_was_active := _staff_breath_ticks > 0
+	_advance_staff_breath(delta)
+	staff_flight.tick(delta, enemies, get_world_3d(), Callable(), camera, companions)
 	if not sword_wave_release.is_empty() and mode in ["practice", "combat"]:
 		_release_sword_wave(sword_wave_release)
 	if mode == "practice" and encounter_mode not in ["village_study","coast_forms","wreck_shore"]:
-		if not motion.busy:
+		if not motion.busy and not breath_was_active and staff_impacts.is_empty():
 			_dummy_idle += delta
 			if _dummy_idle > 0.2:
 				for enemy in enemies:
@@ -1621,6 +1810,7 @@ func _tick_frame(delta: float) -> void:
 					_reset_attack_step()
 					staff_flight.clear()
 					ground_fire.clear()
+					_staff_ground.clear()
 					_mace_ground.clear()
 					mace_fire_lobs.clear()
 					mace_fire_buff_left = 0.0
@@ -1690,6 +1880,8 @@ func _advance_mace_skill(step: Dictionary, sample: Dictionary) -> void:
 	if not step.damage_ready: return
 	if spec.get("fire_buff", false):
 		mace_fire_buff_left = MaceSkillMotion.FIRE_BUFF_DURATION
+		_mace_fire_lift_damage = spec.lift_damage
+		_mace_fire_blast_damage = spec.blast_damage
 		_mace_fire_next_side = 0
 		fx.burst(_mace_head_at(step.contact_pose), Color("#ffad65"), 12, player.position)
 		audio.play("fire_cast")
@@ -1730,8 +1922,8 @@ func _advance_mace_skill(step: Dictionary, sample: Dictionary) -> void:
 	var generation := _skill_generation
 	var direct_hits: Dictionary = {}
 	var armor_stacks: int = spec.get("armor_stacks", 0)
-	for enemy in enemies:
-		if not is_instance_valid(enemy) or enemy.dead or not _mace_skill_motion.area_contains(center, enemy.position): continue
+	for enemy in _player_attack_targets():
+		if not _can_hit_player_target(enemy) or not _mace_skill_motion.area_contains(center, enemy.position): continue
 		if not _armor_line_clear(enemy): continue
 		if (places_rift or pulling) and not _mace_ground_line_clear(center, enemy.position): continue
 		var outward: Vector3 = enemy.position - center
@@ -1739,6 +1931,9 @@ func _advance_mace_skill(step: Dictionary, sample: Dictionary) -> void:
 		var health_before: float = enemy.health
 		enemy_hit(enemy, spec.damage, outward.normalized() * float(spec.knockback), "physical")
 		if generation != _skill_generation: return
+		if enemy is Companion:
+			if ground_impact: _record_mace_slam_hit(direct_hits, enemy, health_before)
+			continue
 		if armor_stacks > 0 and is_instance_valid(enemy):
 			_apply_skill_armor_stacks(enemy, health_before, armor_stacks, enemy.get_instance_id() == _mace_parried_attacker_id)
 		if ground_impact: _record_mace_slam_hit(direct_hits, enemy, health_before)
@@ -1815,8 +2010,8 @@ func _land_mace_leap(contact_pose: Dictionary, spec: Dictionary) -> void:
 	_shake = maxf(_shake, .15)
 	var direct_hits: Dictionary = {}
 	var generation := _skill_generation
-	for enemy in enemies:
-		if not is_instance_valid(enemy) or enemy.dead: continue
+	for enemy in _player_attack_targets():
+		if not _can_hit_player_target(enemy): continue
 		var outward: Vector3 = enemy.position - center
 		if absf(outward.y) > 1.0: continue
 		outward.y = 0.0
@@ -1832,7 +2027,7 @@ func _land_mace_leap(contact_pose: Dictionary, spec: Dictionary) -> void:
 		_trigger_mace_rift(impact, direct_hits)
 
 func _record_mace_slam_hit(hit_damage: Dictionary, enemy, health_before: float) -> void:
-	if is_instance_valid(enemy) and not enemy.dead and enemy.health < health_before:
+	if _can_hit_player_target(enemy) and enemy.health < health_before:
 		hit_damage[enemy.get_instance_id()] = health_before - enemy.health
 
 func _trigger_mace_rift(impact: Vector3, hit_damage: Dictionary) -> void:
@@ -1853,12 +2048,19 @@ func _resolve_mace_rift_echo(echo: Dictionary) -> void:
 	_shake = maxf(_shake, .135 if deals_damage else .07)
 	audio.play("nova")
 	var generation := _mace_ground.generation
-	for enemy in enemies:
-		if not is_instance_valid(enemy) or enemy.dead: continue
+	for enemy in _player_attack_targets():
+		if not _can_hit_player_target(enemy): continue
 		var dealt: float = echo.hit_damage.get(enemy.get_instance_id(), 0.0)
 		if dealt <= 0.0: continue
+		if enemy is Companion:
+			var offset: Vector3 = enemy.position - center
+			if Vector2(offset.x, offset.z).length_squared() > radius * radius: continue
+			if not _mace_ground_line_clear(center, enemy.position): continue
 		fx.burst(enemy.position + Vector3.UP * .65, color, 6, enemy.position)
-		_apply_enemy_hit(enemy, dealt * MaceGroundEffects.RIFT_DAMAGE_FRACTION, Vector3.ZERO, "physical")
+		if enemy is Companion:
+			_apply_friendly_damage(enemy, dealt * MaceGroundEffects.RIFT_DAMAGE_FRACTION)
+		else:
+			_apply_enemy_hit(enemy, dealt * MaceGroundEffects.RIFT_DAMAGE_FRACTION, Vector3.ZERO, "physical")
 		if generation != _mace_ground.generation or mode not in ["practice", "combat"]: return
 
 func _mace_ground_line_clear(from: Vector3, to: Vector3) -> bool:
@@ -1885,25 +2087,25 @@ func _launch_mace_fire_lob(pose: Dictionary) -> void:
 	var distance: float = MaceFireLobs.LANDING_DISTANCE + shot_rng.randf_range(-.35, .35)
 	var direction := Vector3(cos(angle), 0.0, sin(angle))
 	var target := player.position + direction * distance + Vector3.UP * .04
-	mace_fire_lobs.launch(origin, target, direction, camera)
+	mace_fire_lobs.launch(origin, target, direction, camera, _mace_fire_blast_damage)
 
-func _mace_fire_impact(point: Vector3, direct: Node3D, hit_ids: Dictionary) -> void:
+func _mace_fire_impact(point: Vector3, direct: Node3D, hit_ids: Dictionary, damage: float) -> void:
 	if mode not in ["practice", "combat"]: return
 	if direct != null:
 		fx.mace_fire_scoop(point, false)
 	audio.play("fire_impact")
 	var generation := _mace_ground.generation
-	for enemy in enemies:
-		if not is_instance_valid(enemy) or enemy.dead: continue
+	for enemy in _player_attack_targets():
+		if not _can_hit_player_target(enemy): continue
 		var target_id: int = enemy.get_instance_id()
 		if hit_ids.has(target_id): continue
 		var offset: Vector3 = enemy.position - point
 		var height_difference := absf(offset.y)
 		offset.y = 0.0
-		if enemy != direct and (height_difference > 1.3 or offset.length_squared() > MaceFireLobs.BLAST_RADIUS ** 2
+		if enemy != direct and (height_difference > 1.3 or offset.length_squared() > (MaceFireLobs.BLAST_RADIUS * stats.talent_factor("skill_area")) ** 2
 			or not _mace_ground_line_clear(point, enemy.position)): continue
 		hit_ids[target_id] = true
-		enemy_hit(enemy, MaceFireLobs.DAMAGE, offset.normalized(), "fire")
+		enemy_hit(enemy, damage, offset.normalized(), "fire")
 		if generation != _mace_ground.generation or mode not in ["practice", "combat"]: return
 
 func _apply_armor_travel(desired: float) -> void:
@@ -1984,7 +2186,14 @@ func _storm_blade_coated_rig() -> Node3D:
 func _apply_rifle_recoil(desired: float) -> void:
 	if anatomy.leg_count()==0:return
 	var backwards := -Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle))
-	_rifle_recoil.advance(player, backwards, desired, enemies, motion.definition(0).get("recoil_distance", .22))
+	var definition: Dictionary = motion.definition(0)
+	var limit := float(definition.get("recoil_distance", .22))
+	if _rifle_retreat_distance > 0.0:
+		limit = _rifle_retreat_distance
+		var duration := DashVisual.DURATION * (1.5 if definition.get("rifle_finisher", false) else 1.0)
+		var progress := (float(motion.elapsed) - float(definition.windup)) / duration
+		desired = limit * smoothstep(0.0, 1.0, progress)
+	_rifle_recoil.advance(player, backwards, desired, enemies, limit)
 	rifle_recoil_travelled = _rifle_recoil.travelled
 
 func active_magazine():
@@ -1996,17 +2205,52 @@ func guns_reloading() -> bool:
 	return pistol_magazine.reloading or rifle_magazine.reloading
 
 func reset_gun_magazines() -> void:
+	_rifle_target_origin = Vector3.INF
+	_rifle_release_height = INF
 	reload_visual.cancel()
+	if is_instance_valid(ui): ui.reset_rifle_gears()
+	if is_instance_valid(rifle_scope): rifle_scope.zoom = 0.0
 	for magazine in item_magazines.values(): magazine.reset()
 	pistol_magazine.reset()
 	rifle_magazine.reset()
 	_rifle_recoil.reset()
 	rifle_recoil_travelled = 0
 
+func _aimed_rifle_muzzle(authored_muzzle: Vector3) -> Vector3:
+	if not avatar.rifle_raised_aim: return authored_muzzle
+	var art_tip: Vector3 = avatar.get_blade_points().tip
+	var view_axis := camera.global_basis.z.normalized()
+	# Resolve the drawn muzzle on the same level shot plane in every view.
+	# Moving along the view axis preserves its exact position on screen.
+	if absf(view_axis.y) < .001: return authored_muzzle
+	return art_tip + view_axis * ((rifle_cursor_height() - art_tip.y) / view_axis.y)
+
+func aimed_rifle_line(pose: Dictionary) -> Dictionary:
+	var muzzle := _aimed_rifle_muzzle(_staff_tip(pose))
+	var direction := Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle))
+	var target := _point_on_cursor_ray(_rifle_target_origin, _rifle_target_ray, muzzle.y)
+	if target.is_finite():
+		var toward := target - muzzle
+		toward.y = 0.0
+		if toward.dot(direction) > .05: direction = toward.normalized()
+	return {"origin": muzzle, "direction": direction}
+
 func _release_ranged(pose: Dictionary) -> void:
 	if not active_weapon_possible():return
 	if weapon_family in ["pistol","rifle"] and not active_magazine().can_fire():return
 	var definition: Dictionary = motion.definition(0)
+	var next_round: Dictionary = active_magazine().next_round() if weapon_family == "rifle" else {}
+	var finisher := bool(definition.get("rifle_finisher", false))
+	var round_id: String = RifleMotion.FINISHER_ID if finisher else next_round.get("id", "")
+	var round_skill: Dictionary = RifleMotion.SKILLS.get(round_id, {})
+	var first_special_round := not finisher and not next_round.is_empty() and not bool(next_round.fired)
+	if weapon_family == "rifle":
+		definition.merge(rifle_projectile_profile(round_id, active_item if loadout_mode else ""), true)
+		definition.block_on_ally = round_id.is_empty()
+	if not round_skill.is_empty():
+		definition.tracer_color = round_skill.color
+		if int(definition.max_targets) == 1:
+			definition.erase("pierce_after_exit")
 	# A physics step can end slightly past release, already showing recoil.
 	# Start a normal bullet at that visible muzzle; hitches crossing the whole
 	# release interval retain the exact authored release snapshot.
@@ -2014,40 +2258,91 @@ func _release_ranged(pose: Dictionary) -> void:
 		pose = _hand_pose(motion.sample())
 	var muzzle := _staff_tip(pose)
 	var direction := Vector3(cos(motion.aim_angle), 0, sin(motion.aim_angle))
-	if weapon_family in ReadyRules.GUNS:
-		var shot_angle: float=motion.aim_angle+_shot_spread*shot_rng.randf_range(-1,1)
+	var scatter := round_id == RifleMotion.SCATTER_ROUND_ID
+	var aimed_rifle := weapon_family == "rifle" and bool(definition.get("rifle_aimed", false))
+	if aimed_rifle:
+		var line := aimed_rifle_line(pose)
+		muzzle = line.origin
+		direction = line.direction
+		_rifle_release_height = muzzle.y
+	elif weapon_family in ReadyRules.GUNS and not scatter and not finisher:
+		var spread := minf(_shot_spread, deg_to_rad(2.0) * stats.talent_factor("spread")) if not round_skill.is_empty() else _shot_spread
+		if weapon_family == "rifle": spread *= clampf(1.0 - float(rifle_weapon_stats().accuracy), .25, 2.0)
+		var shot_angle: float=motion.aim_angle+spread*shot_rng.randf_range(-1,1)
 		direction=Vector3(cos(shot_angle),0,sin(shot_angle))
 	# Check the short path along the staff too, so close targets/cover cannot
 	# be skipped merely because they stand between the character and muzzle.
 	var hand_origin := _hand_origin()
 	definition.launch_origin = Vector3(hand_origin.x, muzzle.y, hand_origin.z)
-	if staff_flight.spawn_fireball(muzzle, direction, definition, camera):
+	if weapon_family == "staff":
+		definition.splash_ground_y = player.global_position.y
+		if definition.has("splash_radius"): definition.splash_radius *= stats.talent_factor("skill_area")
+	var launched: bool
+	if scatter:
+		launched = not staff_flight.spawn_rifle_pellets(muzzle, direction, definition, definition.scatter_angles, camera).is_empty()
+	elif definition.has("ice_angles"):
+		for angle: float in definition.ice_angles:
+			var ice_direction := direction.rotated(Vector3.DOWN, deg_to_rad(angle))
+			if staff_flight.spawn_fireball(muzzle, ice_direction, definition, camera): launched = true
+	else:
+		launched = staff_flight.spawn_fireball(muzzle, direction, definition, camera)
+	if launched:
 		if weapon_family in ["pistol", "rifle"]:
-			active_magazine().consume()
+			var cycle: Variant = active_magazine()
+			var rapid := bool(definition.get("rifle_rapid", false))
+			if finisher: cycle.prepare_round(RifleMotion.FINISHER_ID)
+			var fired: bool = cycle.consume(rapid) if cycle is RifleCycle else cycle.consume()
+			if fired and weapon_family == "rifle":
+				ui.turn_rifle_gears(false)
+				ui.rifle_ammo_strip.feed_shot(round_id, cycle.round_ids())
+				if rapid: _rifle_events(cycle)
+				if first_special_round:
+					sword_skill_cooldowns[round_id] = RifleMotion.skill_cooldown(round_id, stats.level) * stats.talent_factor("skill_cooldown")
+				if scatter or finisher:
+					_rifle_retreat_distance = rewards.DODGE_SPEED * DashVisual.DURATION * anatomy.dash_multiplier() * (1.5 if finisher else 1.0)
+					_apply_rifle_recoil(0.0)
+				if finisher:
+					_shake = maxf(_shake, .32)
+					fx.burst(muzzle, Color("#d2f2ff"), 16)
 			if weapon_family=="pistol" and _shot_aimed and readiness.held and primary_family()=="pistol":pistol_aim_state.record_shot()
-			fx.burst(muzzle, Color("#ffe5a3"), 8 if weapon_family == "rifle" else 4)
+			fx.burst(muzzle, round_skill.get("color", Color("#ffe5a3")), 8 if weapon_family == "rifle" else 4)
 			audio.play("rifle" if weapon_family == "rifle" else "gun")
 			var eject_pose: Dictionary=pose
 			var eject_angle: float=eject_pose.get("grip_angle",eject_pose.angle)
 			var breech: Vector3=_hand_origin()+Vector3(cos(eject_angle),0,sin(eject_angle))*float(eject_pose.radius)+Vector3.UP*float(eject_pose.grip_height)
 			if weapon_family!="rifle":casing_fx.spawn(breech+direction*.08, direction, camera)
 		else:
-			fx.burst(muzzle, Color("#ffb64a"), 5)
-			fx.ring(Vector3(muzzle.x, player.position.y, muzzle.z), .22, Color(1, .63, .2, .5), .12)
+			var color: Color = staff_energy.ELEMENT_COLORS.get(definition.get("element", "fire"), Color("#ffb64a"))
+			fx.burst(muzzle, color, 9 if definition.has("ice_angles") else 5)
+			fx.ring(Vector3(muzzle.x, player.position.y, muzzle.z), .22, Color(color, .5), .12)
 			audio.play("fire_cast")
 
 func _projectile_damage(enemy, damage: float, knock: Vector3, element: String) -> void:
 	enemy_hit(enemy, damage, knock, element)
 
+func _ice_volley_damage(enemy, damage: float, knock: Vector3) -> void:
+	var previous_health: float = enemy.health
+	enemy_hit(enemy, damage, knock, "ice")
+	if is_instance_valid(enemy) and enemy.health < previous_health:
+		enemy.apply_ice_slow()
+
+func _staff_chain_lightning_jump(from: Vector3, to: Vector3) -> void:
+	fx.staff_lightning_arc(from, to)
+	fx.staff_chain_lightning_contact(to)
+
 func _sword_wave_damage(enemy, damage: float, knock: Vector3, kind: String) -> void:
 	enemy_hit(enemy, damage, knock, "physical", .45 if kind == "vacuum_wave" else -1.0)
 
 func _projectile_impact(where: Vector3, reason: String, element: String) -> void:
-	fx.burst(where, Color("#ffb347") if element == "fire" else Color("#ffe5a3"), 8 if reason == "enemy" else 4)
-	if reason != "range": audio.play("fire_impact" if element == "fire" else "bullet_impact")
+	var color: Color = staff_energy.ELEMENT_COLORS.get(element, Color("#ffe5a3"))
+	fx.burst(where, color, 8 if reason == "enemy" else 4)
+	if reason != "range": audio.play("bullet_impact" if element == "physical" else "fire_impact")
 
-func _projectile_area_impact(where: Vector3, radius: float, element: String) -> void:
-	fx.fire_blast(where, radius, element)
+func _projectile_area_impact(where: Vector3, ground_y: float, radius: float, element: String, charged_fire: bool) -> void:
+	if charged_fire:
+		fx.fire_blast(Vector3(where.x, ground_y, where.z), radius, element, camera)
+	else:
+		fx.fire_blast(where, radius, element)
 
 func current_visual_sample() -> Dictionary:
 	var sample: Dictionary = _hand_pose(motion.sample())
@@ -2080,15 +2375,32 @@ func current_visual_sample() -> Dictionary:
 	if weapon_family=="staff" and not motion.busy and (staff_energy.loading or staff_energy.casting):
 		sample.phase="charge";sample.pitch=1.1 if staff_energy.loading else .60
 		sample.grip_height=.85;sample.radius=.28;sample.angle=atan2(aim.z,aim.x);sample.body_lean=-.025
+		sample.staff_loading = staff_energy.loading
+	if weapon_family == "staff" and _staff_breath_slot >= 0:
+		var breath_angle := _staff_breath_angle if _staff_breath_ticks > 0 else atan2(aim.z, aim.x)
+		sample.merge({"phase": "active", "angle": breath_angle, "grip_angle": breath_angle,
+			"pitch": .7, "grip_height": .72, "radius": .28, "body_lean": .055}, true)
+	if weapon_family == "staff" and not motion.busy and staff_energy.switching:
+		var progress: float = 1.0 - staff_energy.switch_left / staff_energy.SWITCH_TIME
+		var lift := sin(PI * progress)
+		var sweep := sin(TAU * progress)
+		var angle := atan2(aim.z, aim.x) - .82 * sweep
+		sample.merge({"phase": "active", "staff_switch": true, "stance_managed": false,
+			"angle": angle, "grip_angle": angle, "pitch": 1.1 - .76 * lift,
+			"grip_height": .76 + .16 * lift, "radius": .28 + .19 * lift,
+			"body_lean": .06 * sweep, "progress": progress}, true)
 	var action := right_action()
 	if not motion.busy and not guns_reloading() and action != "" and not (weapon_family=="rifle" and active_magazine().bolt_active):
 		sample = ReadyPose.pose(weapon_family, atan2(aim.z,aim.x), "shield" if action == "guard" and has_shield() else action)
+	if weapon_family == "staff":
+		sample.staff_element = staff_energy.NEUTRAL if staff_energy.focus_left > 0.0 else staff_energy.element
 	return sample
 
 func _visual_tick(delta: float) -> void:
 	_sync_staff_key()
 	if primary_family()!="rifle":rifle_focus_state.reset()
 	rifle_focus_state.advance(delta,rifle_aiming())
+	rifle_scope.advance(delta,rifle_finisher_charging())
 	if primary_family()!="pistol" or not readiness.held or mode not in ["practice","combat"] or inventory_open or stats_open:pistol_aim_state.reset()
 	pistol_aim_state.advance(delta,primary_family()=="pistol" and right_action()=="aim")
 	# The 120 Hz simulation may split a hit interval further. In crowded
@@ -2105,6 +2417,7 @@ func _present_frame(delta: float) -> void:
 	var focus_amount: float=rifle_focus_state.amount()
 	camera.size=lerpf(camera.size,arena.camera_size(),1.0-exp(-3*delta)) if encounter_mode=="wreck_shore" else (lerpf(camera.size,village_zoom,1.0-exp(-8*delta)) if encounter_mode in ["village_study","coast_forms"] else rifle_focus_state.camera_size())
 	if encounter_mode=="dungeon":camera.size+=3.0*(1.0-focus_amount)
+	camera.size-=1.8*float(rifle_scope.zoom)
 	var focus := player.position + Vector3(aim.x*rifle_focus_state.lookahead(),0,aim.z*lerpf(.45,6.0 if aim.z<0 else 3.6,focus_amount))
 	if encounter_mode=="village_study":focus=player.position+Vector3(0,0,-6.5)
 	elif encounter_mode=="coast_forms":focus=player.position+Vector3(2.5,0,-2)
@@ -2119,10 +2432,12 @@ func _present_frame(delta: float) -> void:
 	camera.position = _camera_focus + CAMERA_OFFSET + Vector3(randf_range(-_shake, _shake), 0, randf_range(-_shake, _shake))
 	camera.look_at(_camera_focus)
 	_update_mace_charge_preview()
+	_update_staff_ground_preview()
 	var sample: Dictionary = current_visual_sample()
+	sample.rifle_aim_pose = weapon_family == "rifle" and (rifle_aiming() or (motion.busy and _pair_aimed))
 	# Completed melee cuts retain their authored side so the next windup
 	# starts from the same visible pose. Only a fresh stance uses this fallback.
-	if not motion.busy and motion.stage < 0:
+	if not motion.busy and motion.stage < 0 and _staff_breath_slot < 0 and not sample.get("staff_switch", false):
 		sample.angle = atan2(aim.z, aim.x) + (0.0 if weapon_family in ["mace", "staff", "pistol", "rifle"] else 0.35)
 	var reach: float = motion.definition(motion.stage).get("reach", 2.1)
 	sample.smooth_body = _uses_dual_hands()
@@ -2139,7 +2454,7 @@ func _present_frame(delta: float) -> void:
 	avatar.set_leap_height(leap_height)
 	dual_visual.position.y = leap_height
 	avatar.crawl_ready=_crawl_pose_ready()
-	avatar.update_pose(camera, _dodge_facing if _dodge_left>0 else body_aim, _movement().length_squared() > 0.01 and mode in ["practice", "combat"], sample, reach, _hurt, _dodge_left, delta, mode == "dead",dash)
+	avatar.update_pose(camera, _dodge_facing if _dodge_left>0 else body_aim, _movement().length_squared() > 0.01 and mode in ["practice", "combat"], sample, reach, _hurt, _dodge_left, delta, mode in ["dead", "downed"],dash)
 	_update_dual(delta)
 	if use_cutout_avatar:avatar.update_cutout(dual_visual)
 	var playing := mode in ["practice", "combat"]
@@ -2203,8 +2518,8 @@ func _present_frame(delta: float) -> void:
 	if encounter_mode in ["village_study","coast_forms","wreck_shore"]:
 		vision.fog.visible=false;vision.indicator.visible=false;arena.update_player(player.position)
 	brine_zones.refresh(self)
-	rifle_scope.update_view(self)
 	pistol_reticle.update_view(self)
+	rifle_scope.update_view(self)
 	staff_orbs.update_view(self,delta)
 	status_icons.refresh()
 	fx.refresh_visibility()
@@ -2223,6 +2538,8 @@ func _apply_expedition_attributes() -> void:
 	if expedition_leader_attributes.is_empty():
 		expedition_leader_attributes = CharacterStats.roll_level_one(rng)
 	stats.attributes = expedition_leader_attributes.duplicate()
+	stats.set_talents(expedition_leader_talents)
+	flasks.healing_multiplier = stats.talent_factor("flask_heal")
 	for recruit in expedition_companions:
 		if not recruit.has("attributes"):
 			recruit.attributes = CharacterStats.roll_level_one(rng)
@@ -2327,7 +2644,7 @@ func _nearby_downed_companion() -> Companion:
 
 func _begin_revive() -> bool:
 	if not _can_revive_now() or motion.busy or skill_active or pair_strikes.active or guns_reloading(): return false
-	if bow_charge >= 0.0 or staff_energy.loading or staff_energy.casting or _crossbow_loading != null: return false
+	if bow_charge >= 0.0 or staff_energy.loading or staff_energy.casting or _staff_breath_slot >= 0 or _crossbow_loading != null: return false
 	var companion := _nearby_downed_companion()
 	if companion == null: return false
 	revive_target = companion
@@ -2346,11 +2663,14 @@ func _advance_revive(delta: float) -> void:
 		_cancel_revive()
 		return
 	revive_elapsed += delta
-	if revive_elapsed + .000001 < REVIVE_DURATION: return
+	if revive_elapsed + .000001 < revive_duration(): return
 	var companion := revive_target
 	_cancel_revive()
 	companion.revive()
-	fx.number(companion.position + Vector3.UP * 1.8, "+30%", false)
+	fx.number(companion.position + Vector3.UP * 1.8, "+%d%%" % roundi(companion.revive_health_fraction() * 100.0), false)
+
+func revive_duration() -> float:
+	return REVIVE_DURATION * stats.talent_factor("revive_time")
 
 func _cancel_revive() -> void:
 	revive_target = null
@@ -2408,7 +2728,7 @@ func spawn_enemy(kind: String, where: Vector3) -> Node3D:
 func spawn_wave() -> void:
 	wave += 1
 	_wave_wait = 0
-	if not frenzy: health = minf(max_health(), health + 16)
+	if mode in ["combat", "practice"]: health = minf(max_health(), health + 16)
 	stamina = stats.value("max_stamina")
 	var types: Array = ["melee", "melee", "melee"] if wave == 1 else (["melee", "melee", "ranged", "ranged"] if wave == 2 else ["elite", "melee", "melee", "ranged"])
 	var locations: Array[Vector3] = [Vector3(-4.0, 0.03, -3.5), Vector3(4.5, 0.03, -3.0), Vector3(3.8, 0.03, 3.2), Vector3(-4.0, 0.03, 3.5)]
@@ -2434,16 +2754,40 @@ func _melee_contact_region(enemy,step: Dictionary) -> String:
 			if motion.is_target_hit(origin,region.position,region.radius,step.previous_angle,step.current_angle):return region.id
 		return ""
 	return "body" if motion.is_target_hit(origin,enemy.position,.55 if enemy.kind=="elite" else .36,step.previous_angle,step.current_angle) else ""
-func enemy_hit(enemy, damage: float, knock: Vector3, element: String = "",slam_stagger: float=-1.0,ongoing: bool=false,contact_region: String="") -> void:
+func enemy_hit(enemy, damage: float, knock: Vector3, element: String = "",slam_stagger: float=-1.0,ongoing: bool=false,contact_region: String="", from_player: bool = true) -> void:
+	if is_instance_valid(enemy) and enemy is Companion:
+		if from_player: _friendly_hit(enemy, damage, ongoing)
+		return
 	if not is_instance_valid(enemy) or enemy.dead or not is_finite(damage) or damage <= 0: return
 	var critical: bool = not ongoing and combat_rng.randf() < stats.value("critical_chance")
 	damage *= stats.value("damage_multiplier") * (stats.value("critical_multiplier") if critical else 1.0)
+	if from_player: damage *= stats.range_damage(player.global_position, enemy.global_position)
 	if enemy.has_method("calculate_incoming_damage"):
 		damage = enemy.calculate_incoming_damage(damage, element)
 	if not is_finite(damage) or damage <= 0: return
-	_apply_enemy_hit(enemy, damage, knock, element, slam_stagger, ongoing, contact_region, critical)
+	_apply_enemy_hit(enemy, damage, knock, element, slam_stagger, ongoing, contact_region, critical, from_player)
 
-func _apply_enemy_hit(enemy, damage: float, knock: Vector3, element: String, slam_stagger: float = -1.0, ongoing: bool = false, contact_region: String = "", critical: bool = false) -> void:
+func _player_attack_targets() -> Array:
+	return enemies if companions.is_empty() else enemies + companions
+
+func _can_hit_player_target(target) -> bool:
+	return is_instance_valid(target) and (not target.downed if target is Companion else not target.dead)
+
+func _friendly_hit(ally: Companion, damage: float, ongoing: bool = false) -> void:
+	if not _can_hit_player_target(ally) or not is_finite(damage) or damage <= 0.0: return
+	var critical: bool = not ongoing and combat_rng.randf() < stats.value("critical_chance")
+	var outgoing: float = damage * stats.value("damage_multiplier") * (stats.value("critical_multiplier") if critical else 1.0)
+	_apply_friendly_damage(ally, outgoing * FRIENDLY_FIRE_FRACTION * stats.range_damage(player.global_position, ally.global_position))
+
+func _apply_friendly_damage(ally: Companion, damage: float) -> void:
+	var before: float = ally.health
+	ally.receive_friendly_damage(damage)
+	if ally.health < before:
+		var at := ally.global_position
+		fx.number(at + Vector3.UP * 1.65, "-%s เพื่อน" % String.num(before - ally.health, 2), false, at)
+		fx.burst(at + Vector3.UP * .75, Color("#ffb18c"), 4, at)
+
+func _apply_enemy_hit(enemy, damage: float, knock: Vector3, element: String, slam_stagger: float = -1.0, ongoing: bool = false, contact_region: String = "", critical: bool = false, from_player: bool = true) -> void:
 	var heavy: bool = (element == "physical" and damage >= 45.0) or (element.is_empty() and (motion.stage == 2 or damage >= 100 or (weapon_family == "mace" and motion.stage == 0)))
 	if ongoing:heavy=false
 	var ordinary_sword := weapon_family == "sword" and element.is_empty() and not skill_active
@@ -2462,6 +2806,7 @@ func _apply_enemy_hit(enemy, damage: float, knock: Vector3, element: String, sla
 		fx.burst(enemy.position + Vector3(0, 0.75, 0), Color("#ffb347") if element == "fire" else (Color("#ffe5a3") if element == "physical" else (Color("#ffcc80") if heavy else Color("#8ce9db"))), (6 if heavy else 4) if ordinary_sword else (16 if heavy else 8),enemy.position)
 	audio.play("enemy_hit")
 	if enemy.dead:
+		if from_player: _refund_staff_mana(enemy.global_position)
 		if enemy.kind != "dummy": kills += 1
 		audio.play("enemy_death")
 		if vision.can_see(enemy.position):fx.burst(enemy.position + Vector3(0, 0.6, 0), Color("#ef9f60"), 14,enemy.position)
@@ -2478,49 +2823,87 @@ func add_sanity(amount: int) -> void:
 	if mode not in ["combat", "practice"]: return
 	sanity = maxi(SANITY_REVELATION if _sanity_marked else 0, sanity + amount)
 	_sanity_marked = _sanity_marked or sanity >= SANITY_REVELATION
-	var next_frenzy := sanity > frenzy_threshold()
-	if next_frenzy == frenzy: return
-	frenzy = next_frenzy
-	if frenzy:
-		_health_before_frenzy = health
-		health = 0.0
-		flasks.cancel_effects()
-	else:
-		health = minf(_health_before_frenzy, max_health())
-		_health_before_frenzy = 0.0
 
-
-func enemy_attack_parryable(base_parryable: bool, origin: Vector3) -> bool:
-	if not base_parryable: return false
-	if not frenzy: return true
-	var offset := Vector2(origin.x - player.global_position.x, origin.z - player.global_position.z)
-	return offset.length_squared() > FRENZY_ATTACK_RANGE * FRENZY_ATTACK_RANGE
+func enemy_attack_parryable(base_parryable: bool, _origin: Vector3) -> bool:
+	return base_parryable
 
 
 func reward_dungeon_clear_health() -> void:
 	if mode != "combat": return
+	health = minf(max_health(), health + max_health() * .22)
+	if encounter_mode != "dungeon" or dungeon.cleared <= _last_talent_reward_room or dungeon.cleared % TALENT_REWARD_ROOMS != 0: return
+	_last_talent_reward_room = dungeon.cleared
+	if not expedition_leader_talents.is_empty():
+		var id := Talents.roll_gain(expedition_leader_talents, _talent_rng)
+		if id >= 0:
+			stats.set_talents(expedition_leader_talents)
+			stamina = minf(stamina, stats.value("max_stamina"))
+			mana = minf(mana, stats.value("max_mana"))
+			flasks.healing_multiplier = stats.talent_factor("flask_heal")
+			fx.number(player.global_position + Vector3.UP * 1.8, Talents.title(id, stats.talents[id]), false)
+	for index in companions.size():
+		var companion := companions[index]
+		if companion.downed or companion.stats.talents.is_empty(): continue
+		var entries: Dictionary = expedition_companions[index].talents
+		var id := Talents.roll_gain(entries, _talent_rng)
+		if id >= 0:
+			companion.stats.set_talents(entries)
+			companion.stamina = minf(companion.stamina, companion.stats.value("max_stamina"))
+			companion.mana = minf(companion.mana, companion.stats.value("max_mana"))
+			fx.number(companion.global_position + Vector3.UP * 1.8, Talents.title(id, entries[id]), false)
+
+
+func stand_up_sanity_cost() -> int:
+	return STAND_UP_SANITY + roundi(stats.talent("stand_up_sanity"))
+
+func stand_up_health_fraction() -> float:
+	return STAND_UP_HEALTH + stats.talent("stand_up_health")
+
+func stand_up() -> bool:
+	if mode != "downed": return false
+	mode = _mode_before_fall
+	add_sanity(stand_up_sanity_cost())
+	frenzy = sanity >= frenzy_threshold()
+	health = max_health() * stand_up_health_fraction()
+	_iframes = .5
+	_hurt = 0.0
+	ui.show_mode(mode)
+	_visual_tick(0)
+	return true
+
+
+func _fall_at_zero_health() -> void:
 	if frenzy:
-		add_sanity(-FRENZY_ROOM_RECOVERY)
-	else:
-		health = minf(max_health(), health + max_health() * .22)
+		character_lost = true
+		if not expedition_recruit_id.is_empty():
+			ExpeditionRoster.record_loss(expedition_recruit_id)
+		_die_from_body()
+		return
+	_mode_before_fall = mode
+	_cancel_body_actions()
+	pair_strikes.cancel()
+	flasks.cancel_effects()
+	_end_room_fade()
+	player.velocity = Vector3.ZERO
+	mode = "downed"
+	ui.show_mode(mode)
+	_visual_tick(0)
 
 
-func receive_forest_poison(amount: float, integrity_loss: float) -> void:
-	damage_player(amount, Vector3.INF, 0.0, "poison", "torso", 0.0, false, &"area", integrity_loss)
+func receive_forest_poison(amount: float, _integrity_loss: float) -> void:
+	damage_player(amount, Vector3.INF, 0.0, "poison", "torso", 0.0, false, &"area")
 
 
-func damage_player(amount: float,source: Vector3=Vector3.INF,guard_cost: float=1.0,element: String="physical",body_part: String="torso",body_amount: float=-1,red: bool=false,delivery: StringName=&"melee",all_part_loss: float=0.0) -> void:
+func damage_player(amount: float,source: Vector3=Vector3.INF,guard_cost: float=1.0,element: String="physical",_body_part: String="torso",_body_amount: float=-1,_red: bool=false,delivery: StringName=&"melee",_all_part_loss: float=0.0) -> void:
 	if mode not in ["combat","practice"] or body_lab_open or (_iframes>0 or rewards.invulnerable() or _dodge_step_protected) or not is_finite(amount) or amount<=0:return
-	max_health() # Bind part capacities before applying raw body damage.
-	var body_damage: float=stats.incoming(body_amount if body_amount>=0 else amount*.2,element)
 	amount=stats.incoming(amount,element)
+	if amount <= 0.000001: return
 	var guarded:=false
 	var holding_guard := right_action() == "guard"
 	var shield_guard := holding_guard and has_shield()
 	var can_block := holding_guard and (not shield_guard or delivery != &"area")
 	if can_block and ReadyRules.frontal(source, player.position, aim):
 		guarded = true
-		var initial_damage := amount
 		if shield_guard:
 			amount *= 1.0 - ReadyRules.SHIELD_REDUCTION
 			var cost_per_damage := maxf(0.01, guard_cost * stats.value("stamina_cost_multiplier") * anatomy.action_cost_multiplier())
@@ -2531,32 +2914,18 @@ func damage_player(amount: float,source: Vector3=Vector3.INF,guard_cost: float=1
 		else:
 			var block: Dictionary = readiness.receive(amount, source, player.position, aim, stamina, guard_cost)
 			amount = block.damage
-		body_damage *= amount / initial_damage if initial_damage > 0.0 else 0.0
 		fx.parry_clash(_guard_contact_point(source),false);fx.number(player.position+Vector3.UP*1.8,"BLOCK",false);audio.play("guard")
 		if amount <= 0.000001: return
 	var previous_health := health
-	var count_sanity := not frenzy and previous_health <= 0.0
-	var track_parts := previous_health <= 0.0 or is_instance_valid(revive_target)
-	var previous_parts: Dictionary = anatomy.integrity.duplicate() if track_parts else {}
-	if not frenzy:
-		health = maxf(0.0, health - amount)
-	# A split limb segment has half the original limb HP budget.
-	if body_part in anatomy.PARTS and body_part not in ["head", "torso"]:body_damage *= .5
-	anatomy.damage(body_part, body_damage, red)
-	if all_part_loss > 0.0:
-		anatomy.reduce_all_integrity(all_part_loss)
-	var part_injured: bool = track_parts and anatomy.integrity != previous_parts
-	if health < previous_health or part_injured:
-		_cancel_revive()
-	_sync_body_state()
-	if count_sanity and part_injured:
-		add_sanity(CRITICAL_SANITY_PER_HIT)
+	health = maxf(0.0, health - amount)
+	_cancel_revive()
 	_iframes=0.0 if guarded else .5;_hurt=.17;_shake=.1
 	if health < previous_health:
 		fx.number(player.position + Vector3.UP * 1.7, "-%d" % int(previous_health - health), true)
-	elif part_injured:
-		fx.number(player.position + Vector3.UP * 1.7, "ชิ้นส่วนเสียหาย", true)
 	audio.play("hit")
+	if health <= 0.0:
+		_fall_at_zero_health()
+
 
 func _die_from_body() -> void:
 	sword_wave_buff_left = 0.0
@@ -2566,7 +2935,7 @@ func _die_from_body() -> void:
 	if mode=="dead":return
 	if encounter_mode=="coast":clear_hostile_projectiles()
 	_cancel_body_actions();flasks.cancel_effects();body_lab_open=false;mode="dead"
-	fx.clear_transients();staff_flight.clear();ground_fire.clear();_mace_ground.clear();casing_fx.clear();reset_gun_magazines()
+	fx.clear_transients();staff_flight.clear();ground_fire.clear();_staff_ground.clear();_mace_ground.clear();casing_fx.clear();reset_gun_magazines()
 	audio.play("death");ui.show_mode(mode)
 
 func shoot(where: Vector3,direction: Vector3,damage: float,parryable: bool=false,owner_enemy: Node=null,guard_cost: float=1.0,max_range: float=16.5,body_part: String="torso",body_amount: float=-1) -> void:
@@ -2649,7 +3018,7 @@ func toggle_inventory() -> bool:
 	_cancel_bow()
 	_cancel_crossbow_load()
 	_cancel_rifle_action()
-	staff_energy.cancel_actions()
+	_cancel_staff_actions()
 	if stats_open:return false
 	if not inventory_open and _dodge_left > 0: return false
 	if not inventory_open and mode not in ["menu", "practice", "combat"]: return false
@@ -2668,8 +3037,8 @@ func toggle_inventory() -> bool:
 		arsenal.selected = {}
 		arsenal.refresh()
 	arsenal.surface.visible = inventory_open
-	if is_instance_valid(rifle_scope):rifle_scope.update_view(self)
 	pistol_reticle.update_view(self)
+	rifle_scope.update_view(self)
 	return true
 
 func _select_loadout_item(id: String) -> bool:
@@ -2716,7 +3085,7 @@ func activate_loadout(index: int) -> bool:
 	_cancel_bow()
 	_cancel_crossbow_load()
 	_cancel_rifle_action()
-	staff_energy.cancel_actions()
+	_cancel_staff_actions()
 	if mode not in ["menu", "practice", "combat"] or anatomy.dead(): return false
 	if index not in [0,1] or loadout.primary(index) == "" or _dodge_left > 0: return false
 	if not inventory_open and (motion.busy or pair_strikes.active or skill_active or guns_reloading()):
@@ -2779,8 +3148,16 @@ func sword_skills_available() -> bool:
 func mace_skills_available() -> bool:
 	return primary_family() == "mace" and _weapon_skills_available()
 
-func _weapon_skills_available() -> bool:
-	return body_action_ready() and active_weapon_possible() and mode in ["practice", "combat"] and not skill_active and not motion.busy and not pair_strikes.active and _dodge_left <= 0.0 and not guns_reloading() and not _arrival_locked and not sword_skills_open and not inventory_open and not stats_open and not dungeon_peek.visible and _room_fade == null
+func rifle_skills_available(id: String) -> bool:
+	var independent := id in [RifleMotion.REFILL_SKILL_ID, RifleMotion.RAPID_FIRE_ID]
+	return primary_family() == "rifle" and _weapon_skills_available(independent) and right_action() != "guard" \
+		and not is_instance_valid(revive_target) and (independent or equipped_rifle_cycle().can_fire())
+
+func rifle_rapid_fire_left() -> float:
+	return equipped_rifle_cycle().rapid_fire_left if primary_family() == "rifle" else 0.0
+
+func _weapon_skills_available(allow_reload: bool = false) -> bool:
+	return body_action_ready() and active_weapon_possible() and mode in ["practice", "combat"] and not skill_active and not motion.busy and not pair_strikes.active and _dodge_left <= 0.0 and (allow_reload or not guns_reloading()) and not _arrival_locked and not sword_skills_open and not inventory_open and not stats_open and not dungeon_peek.visible and _room_fade == null
 
 func _advance_paired_hand() -> void:
 	if not pair_strikes.active or pair_strikes.cursor!=0: return
@@ -2911,14 +3288,14 @@ func toggle_stats() -> void:
 	_cancel_bow()
 	_cancel_crossbow_load()
 	_cancel_rifle_action()
-	staff_energy.cancel_actions()
+	_cancel_staff_actions()
 	if not stats_open:
 		if inventory_open or mode not in ["menu","practice","combat","paused"] or motion.busy or pair_strikes.active or _dodge_left>0:return
 		readiness.release();pistol_aim_state.reset();_held=false
 	stats_open=not stats_open
 	stats_panel.refresh();stats_panel.surface.visible=stats_open
-	if is_instance_valid(rifle_scope):rifle_scope.update_view(self)
 	pistol_reticle.update_view(self)
+	rifle_scope.update_view(self)
 
 
 func release_great_charge() -> bool:
@@ -2974,15 +3351,20 @@ func _fire_crossbow() -> bool:
 	audio.play("equip")
 	return true
 
-func _crossbow_hit(enemy, damage: float, knock: Vector3) -> void:
+func _companion_projectile_damage(enemy, damage: float, knock: Vector3, element: String, bolt: bool) -> void:
+	if bolt: _crossbow_hit(enemy, damage, knock, false)
+	else: enemy_hit(enemy, damage, knock, element, -1.0, false, "", false)
+
+func _crossbow_hit(enemy, damage: float, knock: Vector3, from_player: bool = true) -> void:
 	var before: float = enemy.health
-	enemy_hit(enemy, damage, knock, "physical")
+	enemy_hit(enemy, damage, knock, "physical", -1.0, false, "", from_player)
 	if not is_instance_valid(enemy) or enemy.dead or enemy.health >= before: return
 	if enemy.crossbow_wound_ticks == 0:
 		enemy.crossbow_wound_time = 0.0
 		if vision.can_see(enemy.position):
 			fx.number(enemy.position + Vector3.UP * 1.9, "แผลลึก", false, enemy.position)
 	enemy.crossbow_wound_ticks = CROSSBOW_WOUND_TICKS
+	enemy.crossbow_wound_from_player = from_player
 
 func _cancel_crossbow_load() -> void:
 	if _crossbow_loading == null: return
@@ -3038,37 +3420,319 @@ func _cancel_bow() -> void:
 
 func _sync_staff_key() -> void:
 	var id: String=(loadout.primary() if loadout_mode else "free:staff") if primary_family()=="staff" else ""
+	if id != staff_energy.key: _cancel_staff_actions()
 	staff_energy.bind(id)
 func _staff_allowed() -> bool:
 	if not body_action_ready() or not active_weapon_possible():return false
 	return primary_family()=="staff" and mode in ["practice","combat"] and not anatomy.dead() and not inventory_open and not stats_open and _dodge_left<=0 and not motion.busy and not pair_strikes.active and not skill_active and readiness.broken_left<=0
 func _staff_pay_unit() -> bool:return _spend_stamina(attack_cost("staff",0))
+func staff_skills_available(id: String = StaffMotion.CHARGED_FIRE_ID) -> bool:
+	var skill: Dictionary = StaffMotion.SKILLS.get(id, {})
+	return not skill.is_empty() and _staff_allowed() and not staff_energy.casting and not staff_energy.switching \
+		and _staff_breath_ticks == 0 and staff_energy.units >= int(skill.orbs) and mana >= staff_skill_cost(id) \
+		and float(sword_skill_cooldowns.get(id, 0.0)) <= 0.0
+
+func staff_skill_cost(id: String) -> float:
+	var skill: Dictionary = StaffMotion.SKILLS.get(id, {})
+	var cost: float = float(skill.get("cost", 0.0)) * stats.talent_factor("skill_mana")
+	return cost * .5 if id != StaffMotion.FOCUS_ID and staff_energy.focus_left > 0.0 else cost
+
+func staff_weapon_power(item_id: String = "") -> float:
+	var id := item_id if not item_id.is_empty() else (loadout.primary() if loadout_mode else "")
+	return float(loadout.items.get(id, {}).get("staff_power", StaffMotion.BASE_WEAPON_POWER))
+
+func sword_weapon_power(item_id: String = "") -> float:
+	var id := item_id if not item_id.is_empty() else (active_item if loadout_mode else "")
+	return float(loadout.items.get(id, {}).get("sword_power", SwordMotion.BASE_WEAPON_POWER))
+
+func mace_weapon_power(item_id: String = "") -> float:
+	var id := item_id if not item_id.is_empty() else (active_item if loadout_mode else "")
+	return float(loadout.items.get(id, {}).get("mace_power", MaceSkillMotion.BASE_WEAPON_POWER))
+
+func staff_skill_scaling(id: String) -> Vector2:
+	return StaffMotion.scaling(id, staff_weapon_power(), stats.value("intelligence"), stats.level)
+
+func staff_charge_time(id: String) -> float:
+	var skill: Dictionary = StaffMotion.SKILLS[id]
+	var windup: float = stats.talent_factor("area_windup") if SkillTags.is_area(skill) or id == StaffMotion.CHARGED_FIRE_ID else 1.0
+	return float(skill.charge_time) * windup / StaffMotion.charge_speed(stats.value("intelligence"))
+
+func _staff_ground_spec(id: String) -> Dictionary:
+	var spec := StaffMotion.ground_spell(id, staff_energy.casting_elements(), staff_skill_scaling(id), stats.level)
+	if spec.has("radius"): spec.radius *= stats.talent_factor("skill_area")
+	return spec
+
+func _activate_staff_focus() -> bool:
+	if not staff_skills_available(StaffMotion.FOCUS_ID): return false
+	_sync_staff_key()
+	_cancel_staff_actions()
+	_held = false
+	mana -= staff_skill_cost(StaffMotion.FOCUS_ID)
+	sword_skill_cooldowns[StaffMotion.FOCUS_ID] = StaffMotion.focus_cooldown(stats.level) * stats.talent_factor("skill_cooldown")
+	staff_energy.focus_left = staff_energy.FOCUS_DURATION
+	staff_energy.prepend_neutral(2)
+	var tip := _staff_tip(current_visual_sample())
+	fx.staff_focus_flash(tip)
+	fx.burst(tip, staff_energy.ELEMENT_COLORS[staff_energy.NEUTRAL], 14)
+	audio.play("staff_charge3")
+	return true
+
+func _pay_staff_skill(id: String, orbs_spent: int) -> void:
+	mana -= staff_skill_cost(id)
+	if staff_energy.focus_left > 0.0: staff_energy.grant_neutral(floori(orbs_spent / 2.0))
+
+func staff_skill_charging(index: int) -> bool:
+	return index == _staff_charge_slot and staff_energy.casting
+
+func request_staff_basic() -> bool:
+	if not _staff_allowed() or staff_energy.casting or staff_energy.switching or _staff_breath_slot >= 0: return false
+	_sync_staff_key()
+	var element: String = staff_energy.element
+	var spent_element: String = element if staff_energy.slots.has(element) else staff_energy.NEUTRAL
+	if not staff_energy.slots.has(spent_element):
+		staff_energy.empty_flash = .3
+		return false
+	staff_energy.stop_load()
+	var no_cast_orbs: Array[String] = []
+	motion.configure_staff(1, element, no_cast_orbs, "", staff_skill_scaling(""))
+	_staff_committing = true
+	var started := _start_weapon_attack(0)
+	_staff_committing = false
+	if started: staff_energy.spend_orb(spent_element)
+	return started
+
+func cycle_staff_element() -> bool:
+	if not _staff_allowed() or staff_energy.casting or _staff_breath_ticks > 0: return false
+	_stop_staff_breath()
+	_sync_staff_key()
+	if not staff_energy.cycle_element(): return false
+	ui.refresh()
+	return true
+
 func begin_staff_load() -> bool:
-	if not _staff_allowed():return false
+	if not _staff_allowed() or _staff_breath_ticks > 0:return false
+	_stop_staff_breath()
 	_sync_staff_key();_held=false;readiness.release();pistol_aim_state.reset()
 	var ok: bool=staff_energy.begin_load()
 	if ok:audio.play("charge")
 	return ok
-func begin_staff_cast() -> bool:
-	if not _staff_allowed():return false
+func begin_staff_cast(id: String = StaffMotion.CHARGED_FIRE_ID) -> bool:
+	if not staff_skills_available(id): return false
+	var skill: Dictionary = StaffMotion.SKILLS[id]
+	if not skill.has("charge_time"): return false
+	_stop_staff_breath()
 	_sync_staff_key();_held=false;_refresh_aim()
-	var ok: bool=staff_energy.begin_cast()
-	if ok:audio.play("staff_charge1")
+	var ok: bool=staff_energy.begin_cast(skill.orbs, staff_charge_time(id), skill.element)
+	if ok:
+		_staff_charge_skill = id
+		audio.play("staff_charge1")
 	else:audio.play("ui")
 	return ok
 func release_staff_cast() -> bool:
 	if not _staff_allowed() or not staff_energy.casting:return false
+	_staff_charge_slot = -1
+	var skill: Dictionary = StaffMotion.SKILLS[_staff_charge_skill]
+	if not staff_energy.cast_ready() or mana < staff_skill_cost(_staff_charge_skill):
+		_cancel_staff_actions()
+		return false
 	_refresh_aim()
-	var tier: int=staff_energy.release_cast()
-	if tier<=0:return false
-	motion.configure_staff(tier);_staff_committing=true
+	var ground_spec := _staff_ground_spec(_staff_charge_skill)
+	if not ground_spec.is_empty():
+		var destination := _staff_ground_target()
+		staff_energy.release_cast()
+		_pay_staff_skill(_staff_charge_skill, skill.orbs)
+		_staff_ground.clear_preview()
+		_staff_ground.place(fx, destination, ground_spec, camera)
+		fx.burst(destination + Vector3.UP * .3, ground_spec.color, 11)
+		audio.play("fire_cast")
+		return true
+	motion.configure_staff(skill.tier, skill.element, staff_energy.casting_elements(), _staff_charge_skill, staff_skill_scaling(_staff_charge_skill))
+	_staff_committing=true
 	var ok: bool=_start_weapon_attack(0)
 	_staff_committing=false;_held=false
+	if ok:
+		staff_energy.release_cast()
+		_pay_staff_skill(_staff_charge_skill, skill.orbs)
+	else:
+		_cancel_staff_actions()
 	return ok
+
+func _cancel_staff_actions() -> void:
+	staff_energy.cancel_actions()
+	_staff_ground.clear_preview()
+	_stop_staff_breath()
+
+func _staff_ground_target() -> Vector3:
+	var origin := player.global_position
+	var target := origin + aim * StaffMotion.GROUND_CAST_REACH
+	if test_aim.length_squared() <= .001:
+		var ray_origin := camera.project_ray_origin(_mouse_position)
+		var ray := camera.project_ray_normal(_mouse_position)
+		if absf(ray.y) > .001:
+			target = ray_origin + ray * ((origin.y - ray_origin.y) / ray.y)
+	target = origin + (target - origin).limit_length(StaffMotion.GROUND_CAST_REACH)
+	if arena.has_method("clamp_point"):
+		target = arena.clamp_point(target)
+	elif encounter_mode == "dungeon":
+		target.x = clampf(target.x, -arena.room_half.x + .3, arena.room_half.x - .3)
+		target.z = clampf(target.z, -arena.room_half.y + .3, arena.room_half.y - .3)
+	else:
+		target.x = clampf(target.x, -11.6, 11.6)
+		target.z = clampf(target.z, -9.0, 9.0)
+	target.y = origin.y
+	if target.is_equal_approx(origin): return target
+	var height := Vector3.UP * .55
+	var query := PhysicsRayQueryParameters3D.create(origin + height, target + height, 1)
+	query.hit_from_inside = true
+	var cover := get_world_3d().direct_space_state.intersect_ray(query)
+	if not cover.is_empty():
+		target = cover.position - height - origin.direction_to(target) * .1
+	return target
+
+func _update_staff_ground_preview() -> void:
+	if not staff_energy.casting: return
+	var spec := _staff_ground_spec(_staff_charge_skill)
+	if not spec.is_empty():
+		_staff_ground.show_preview(fx, _staff_ground_target(), spec.radius, spec.color, staff_energy.cast_ready())
+
+func _resolve_staff_ground_impacts(fields: Array[Dictionary]) -> void:
+	for field in fields:
+		var center: Vector3 = field.center
+		_dummy_idle = 0.0
+		var meteor: bool = field.element == "fire"
+		if meteor:
+			fx.staff_meteor_impact(center, field.radius, camera)
+			fx.ring(center + Vector3.UP * .06, field.radius, Color("#ffc270", .8), .26)
+			_shake = maxf(_shake, .23)
+		else:
+			fx.staff_ice_crystals(center, field.radius, camera)
+		audio.play("nova")
+		for enemy in _player_attack_targets().duplicate():
+			if not _can_hit_player_target(enemy): continue
+			if not StaffGroundSpells.contains(field, enemy.global_position): continue
+			if not _mace_ground_line_clear(center, enemy.global_position): continue
+			var health_before: float = enemy.health
+			enemy_hit(enemy, field.damage, Vector3.ZERO, field.element)
+			if not meteor and is_instance_valid(enemy) and not enemy is Companion and enemy.health < health_before:
+				enemy.apply_ice_root()
+		if meteor and int(field.sparks) > 0: _staff_meteor_sparks(field)
+
+func _staff_meteor_sparks(field: Dictionary) -> void:
+	var center: Vector3 = field.center
+	var outer_radius: float = field.radius + StaffMotion.METEOR_SPARK_REACH
+	var candidates: Array[Dictionary] = []
+	for enemy in enemies:
+		if not is_instance_valid(enemy) or enemy.dead: continue
+		var offset: Vector3 = enemy.global_position - center
+		var distance_squared := Vector2(offset.x, offset.z).length_squared()
+		if distance_squared <= float(field.radius) ** 2 or distance_squared > outer_radius ** 2: continue
+		if not _mace_ground_line_clear(center, enemy.global_position): continue
+		candidates.append({"enemy": enemy, "distance": distance_squared})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary): return a.distance < b.distance)
+	for index in range(mini(int(field.sparks), candidates.size())):
+		var enemy: Node3D = candidates[index].enemy
+		if not is_instance_valid(enemy) or enemy.dead: continue
+		var contact := enemy.global_position + Vector3.UP * .85
+		var direction := ((contact - center) * Vector3(1, 0, 1)).normalized()
+		var edge := center + direction * float(field.radius)
+		fx.staff_lightning_arc(edge + Vector3.UP * .45, contact)
+		enemy_hit(enemy, field.spark_damage, Vector3.ZERO, "lightning")
+
+func _refund_staff_mana(at: Vector3) -> void:
+	var refund := _staff_ground.mana_refund(at)
+	if refund <= 0.0: return
+	var previous_mana := mana
+	mana = minf(stats.value("max_mana"), mana + refund)
+	if mana > previous_mana:
+		fx.burst(at + Vector3.UP * .72, Color("#d5aeff"), 7, at)
+		fx.number(at + Vector3.UP * 1.95, "+%s MP" % String.num(mana - previous_mana, 1), false, at)
+
+func staff_breath_status(index: int) -> String:
+	if index != _staff_breath_slot: return ""
+	return "กำลังพ่นไฟ" if _staff_breath_ticks > 0 else "คลิกซ้ายค้างเพื่อพ่นไฟ"
+
+func _arm_staff_breath(index: int) -> bool:
+	if _staff_breath_slot == index and _staff_breath_ticks == 0:
+		_stop_staff_breath()
+		return true
+	if not staff_skills_available(StaffMotion.FIRE_BREATH_ID): return false
+	_sync_staff_key()
+	staff_energy.stop_load()
+	_held = false
+	_staff_breath_slot = index
+	audio.play("staff_charge1")
+	return true
+
+func _start_staff_breath() -> bool:
+	if _staff_breath_slot < 0 or not staff_skills_available(StaffMotion.FIRE_BREATH_ID): return false
+	var skill: Dictionary = StaffMotion.SKILLS[StaffMotion.FIRE_BREATH_ID]
+	var orbs: Array[String] = staff_energy.spend_prefix(skill.orbs)
+	_staff_breath_bonus = StaffMotion.orb_multipliers(skill.element, orbs) * staff_skill_scaling(StaffMotion.FIRE_BREATH_ID)
+	_pay_staff_skill(StaffMotion.FIRE_BREATH_ID, orbs.size())
+	_refresh_aim()
+	_staff_breath_angle = atan2(aim.z, aim.x)
+	_staff_breath_ticks = StaffMotion.BREATH_TICKS
+	_staff_breath_elapsed = 0.0
+	_dummy_idle = 0.0
+	audio.play("fire_cast")
+	return true
+
+func _stop_staff_breath() -> void:
+	_staff_breath_slot = -1
+	_staff_breath_ticks = 0
+	if is_instance_valid(fx): fx.hide_staff_fire_breath()
+
+func _advance_staff_breath(delta: float) -> void:
+	if _staff_breath_ticks <= 0: return
+	if not _staff_allowed():
+		_stop_staff_breath()
+		return
+	var desired := atan2(aim.z, aim.x)
+	_staff_breath_angle = rotate_toward(_staff_breath_angle, desired, StaffMotion.BREATH_TURN_RATE * delta)
+	var half_angle := StaffMotion.BREATH_HALF_ANGLE * _staff_breath_bonus.y
+	var origin := player.global_position
+	var muzzle := _staff_tip(current_visual_sample())
+	var breath_age := (StaffMotion.BREATH_TICKS - _staff_breath_ticks) * StaffMotion.BREATH_INTERVAL + _staff_breath_elapsed + delta
+	fx.staff_fire_breath(muzzle, origin, _staff_breath_angle, half_angle, StaffMotion.BREATH_REACH * stats.talent_factor("skill_area"), camera, breath_age)
+	_staff_breath_elapsed += delta
+	while _staff_breath_ticks > 0 and _staff_breath_elapsed >= StaffMotion.BREATH_INTERVAL - StaffMotion.EPSILON:
+		_staff_breath_elapsed -= StaffMotion.BREATH_INTERVAL
+		_staff_breath_ticks -= 1
+		_staff_breath_damage(origin, half_angle)
+		if _staff_breath_ticks == 0: _stop_staff_breath()
+
+func _staff_breath_damage(origin: Vector3, half_angle: float) -> void:
+	var damage := StaffMotion.BREATH_DAMAGE * _staff_breath_bonus.x
+	for enemy in _player_attack_targets().duplicate():
+		if not _can_hit_player_target(enemy): continue
+		var offset: Vector3 = enemy.global_position - origin
+		var ground := Vector2(offset.x, offset.z)
+		if ground.length_squared() > (StaffMotion.BREATH_REACH * stats.talent_factor("skill_area")) ** 2: continue
+		if absf(angle_difference(_staff_breath_angle, ground.angle())) > half_angle: continue
+		if not _armor_line_clear(enemy): continue
+		var contact: Vector3 = enemy.global_position + Vector3.UP * .8
+		fx.burst(contact, Color("#ff9b49"), 3)
+		enemy_hit(enemy, damage, Vector3.ZERO, "fire", -1.0, true)
+		if _staff_breath_slot < 0: return
+
 func _ground_burn(enemy,amount: float) -> void:
 	enemy_hit(enemy,amount,Vector3.ZERO,"fire",-1.0,true)
 
-func rifle_aiming() -> bool:return primary_family()=="rifle" and right_action()=="aim"
+func rifle_finisher_charging() -> bool:
+	return motion == _basic_motion and _basic_motion.rifle_finisher_charging()
+
+func rifle_aiming() -> bool:return primary_family()=="rifle" and (rifle_finisher_charging() or right_action()=="aim")
+
+func equipped_rifle_cycle() -> RifleCycle:
+	var cycle = item_magazines.get(loadout.primary()) if loadout_mode else null
+	return cycle if cycle is RifleCycle else rifle_magazine
+
+func rifle_display_queue() -> Array[String]:
+	var queue := equipped_rifle_cycle().round_ids()
+	if rifle_finisher_charging() and not queue.is_empty():
+		queue.pop_back()
+		queue.push_front(RifleMotion.FINISHER_ID)
+	return queue
 func _rifle_request_gate() -> bool:
 	var mag=active_magazine()
 	if mag.reloading:
@@ -3089,15 +3753,38 @@ func _rifle_events(mag) -> void:
 		if cue=="eject":
 			var at: Vector3=player.position+Vector3.UP*.85+aim*.3
 			casing_fx.spawn(at,aim,camera);audio.play("rifle_rack")
-		elif cue=="insert":audio.play("rifle_insert")
+		elif cue=="insert":
+			ui.turn_rifle_gears(true)
+			audio.play("rifle_insert")
 		else:audio.play("rifle_reload_done")
 func _rifle_damage(enemy,damage: float,knock: Vector3) -> void:
-	if not is_instance_valid(enemy) or enemy.dead:return
-	var before: float=enemy.health
-	var generation:=_skill_generation
-	var previous_mode:=mode
-	enemy_hit(enemy,damage*enemy.rifle_mark.multiplier(),knock,"physical")
-	if is_instance_valid(enemy) and not enemy.dead and enemy.health<before and mode==previous_mode and _skill_generation==generation:enemy.apply_rifle_mark()
+	if not is_instance_valid(enemy) or enemy.dead: return
+	var health_before: float = enemy.health
+	enemy_hit(enemy, damage * enemy.rifle_mark.multiplier(), knock, "physical")
+	if is_instance_valid(enemy) and enemy.health < health_before:
+		enemy.rifle_mark.clear()
+
+func _rifle_mark_damage(enemy, damage: float, knock: Vector3) -> void:
+	if not is_instance_valid(enemy) or enemy.dead: return
+	var health_before: float = enemy.health
+	enemy_hit(enemy, damage, knock, "physical")
+	if is_instance_valid(enemy) and enemy.health < health_before and enemy.apply_rifle_mark():
+		fx.burst(enemy.position + Vector3.UP * .8, Color("#e7acff"), 6, enemy.position)
+
+func _rifle_armor_damage(enemy, damage: float, knock: Vector3, stacks: int) -> void:
+	var health_before: float = enemy.health
+	_rifle_damage(enemy, damage, knock)
+	_apply_skill_armor_stacks(enemy, health_before, stacks)
+
+func _rifle_pellet_damage(enemy, damage: float, knock: Vector3, volley: Dictionary) -> void:
+	if not is_instance_valid(enemy) or enemy.dead: return
+	var target_id: int = enemy.get_instance_id()
+	var multiplier: float = volley.get(target_id, enemy.rifle_mark.multiplier())
+	var health_before: float = enemy.health
+	enemy_hit(enemy, damage * multiplier, knock, "physical")
+	if is_instance_valid(enemy) and enemy.health < health_before and not volley.has(target_id):
+		volley[target_id] = multiplier
+		enemy.rifle_mark.clear()
 
 func has_dual_weapons() -> bool:
 	if not loadout_mode:return false
@@ -3106,23 +3793,47 @@ func has_dual_weapons() -> bool:
 	for id: String in ids:
 		if bool(loadout.items[id].two_hand) or loadout.items[id].family == "shield":return false
 	return true
+func _is_normal_melee() -> bool:
+	return not skill_active and weapon_family in ["sword", "greatsword", "mace"] and motion.definition(motion.stage).get("kind") != "fire_lift"
+
 func attack_rate() -> float:
+	if rifle_finisher_charging(): return 1.0
 	var bonus := 0.10 if _storm_blade_has_current_sword() else 0.0
 	if weapon_family=="pistol":bonus=_pistol_shot_bonus if motion.busy else (pistol_aim_state.speed_bonus() if readiness.held else 0.0)
-	return stats.value("attack_speed")*DualRules.speed(has_dual_weapons())*(1+bonus)*weapon_injury_factor()
-func reload_rate() -> float:return stats.value("reload_speed")*DualRules.speed(has_dual_weapons())*weapon_injury_factor()
+	var melee_speed: float = stats.talent_factor("melee_speed") if _is_normal_melee() else 1.0
+	return stats.value("attack_speed") * melee_speed * DualRules.speed(has_dual_weapons()) * (1.0 + bonus) * weapon_injury_factor()
+func rifle_weapon_stats(item_id: String = "") -> Dictionary:
+	var id: String = item_id if not item_id.is_empty() else (loadout.primary() if loadout_mode else "")
+	return loadout.items.get(id, {}).get("rifle_stats", RifleMotion.DEFAULT_WEAPON_STATS)
+
+func rifle_projectile_profile(id: String, item_id: String = "") -> Dictionary:
+	var profile := RifleMotion.projectile_profile(id, float(rifle_weapon_stats(item_id).power), stats.attributes, stats.level)
+	if profile.has("rifle_split"): profile.rifle_split.reach *= stats.talent_factor("skill_area")
+	if profile.has("scatter_angles"):
+		var spread: float = stats.talent_factor("spread")
+		for index in profile.scatter_angles.size(): profile.scatter_angles[index] *= spread
+	return profile
+
+func reload_rate(magazine: Variant = null) -> float:
+	var rate: float = stats.value("reload_speed") * DualRules.speed(has_dual_weapons()) * weapon_injury_factor()
+	if magazine is RifleCycle:
+		var item_id: String = str(item_magazines.find_key(magazine)) if magazine != rifle_magazine else ""
+		var bonus: float = RifleMotion.DEFAULT_WEAPON_STATS.reload if magazine == rifle_magazine else float(rifle_weapon_stats(item_id).reload)
+		rate /= RifleMotion.time_scale(stats.attributes, bonus)
+	return rate
 func weapon_injury_factor() -> float:
 	var two_hand: bool=bool(loadout.items[active_item].two_hand) if loadout_mode and active_item in loadout.items else weapon_family in ["greatsword","staff","rifle","bow","crossbow"]
 	return anatomy.weapon_speed("left_arm" if _is_left_hand() else "right_arm",two_hand)
 func gun_spread(family: String,aimed: bool) -> float:
+	if family == "rifle" and aimed: return 0.0
 	var spread: float=pistol_aim_state.spread(aimed) if family=="pistol" else ReadyRules.spread(family,aimed)
-	return spread*DualRules.dispersion(has_dual_weapons())
+	return spread * DualRules.dispersion(has_dual_weapons()) * stats.talent_factor("spread")
 
 func max_health() -> float:
 	anatomy.bind_max_hp(stats.value("max_health"))
 	return stats.value("max_health")*anatomy.hp_multiplier()
 func use_health_flask() -> bool:
-	if frenzy or mode not in ["practice","combat"] or inventory_open or stats_open or not body_action_ready() or flasks.charges<=0 or health>=max_health():return false
+	if mode not in ["practice","combat"] or inventory_open or stats_open or not body_action_ready() or flasks.charges<=0 or health>=max_health():return false
 	health=flasks.drink(health,max_health())
 	_visual_tick(0)
 	return true
@@ -3145,12 +3856,12 @@ func active_weapon_possible() -> bool:
 	if loadout_mode:return not available_body_items().is_empty()
 	return anatomy.functional("right_arm") and (weapon_family not in ["greatsword","staff","rifle","bow","crossbow"] or anatomy.arm_count()==2)
 func body_action_ready() -> bool:
-	return not body_lab_open and not anatomy.dead() and (anatomy.leg_count()>0 or (_dodge_left<=0 and _movement().length_squared()<.001 and _crawl_still>=.25-.000001))
+	return mode != "downed" and not body_lab_open and not anatomy.dead() and (anatomy.leg_count()>0 or (_dodge_left<=0 and _movement().length_squared()<.001 and _crawl_still>=.25-.000001))
 func _cancel_body_actions() -> void:
 	_cancel_revive()
 	_cancel_bow()
 	_cancel_crossbow_load()
-	_cancel_skill();staff_energy.cancel_actions();_cancel_rifle_action();motion.reset();_reset_attack_step()
+	_cancel_skill();_cancel_staff_actions();_cancel_rifle_action();motion.reset();_reset_attack_step()
 	readiness.release();pistol_aim_state.reset();_held=false;_dodge_left=0;_next_combo=0
 	for mag in [pistol_magazine,rifle_magazine]+item_magazines.values():mag.cancel_reload()
 	reload_visual.cancel()

@@ -16,10 +16,11 @@ void fragment() {
  float advance = smoothstep(0.02, 0.62, cycle);
  float retreat = smoothstep(0.62, 1.0, cycle);
  float centre = mix(0.96, 0.025, advance) + retreat * 0.32;
- centre += 0.012 * sin(UV.x * 12.566371 + patch_seed * 6.283185 + phase);
+ centre += 0.042 * sin(UV.x * 12.566371 + patch_seed * 6.283185 + phase);
+ centre += 0.018 * sin(UV.x * 32.0 - phase * 0.65);
  float crest = 1.0 - smoothstep(0.032, 0.095, abs(UV.y - centre));
  float life = smoothstep(0.01, 0.12, cycle) * (1.0 - smoothstep(0.72, 1.0, cycle));
- float grains = sin(floor(UV.x * 28.0) * 0.67 + patch_seed * 31.0);
+ float grains = sin(UV.x * 18.76 + patch_seed * 31.0);
  grains += 0.35 * sin(UV.x * 71.0 + phase * 2.0 + patch_seed * 13.0);
  float broken = smoothstep(-0.18, 0.52, grains);
  float ends = smoothstep(0.0, 0.15, UV.x) * (1.0 - smoothstep(0.85, 1.0, UV.x));
@@ -30,7 +31,7 @@ void fragment() {
  float blue_crest = crest * life * 0.14 + backwash * 0.14;
  ALBEDO = mix(vec3(0.36, 0.64, 0.66), vec3(0.89, 0.95, 0.89), clamp(foam + impact * 0.22, 0.0, 1.0));
  float arriving_surge = 0.30 + 0.70 * smoothstep(-0.11,0.12,harbor_wave_displacement(shore_world,clock));
- ALPHA = clamp((foam + blue_crest) * ends * arriving_surge, 0.0, 0.90);
+ ALPHA = clamp((foam + blue_crest) * ends * arriving_surge * 0.72, 0.0, 0.85);
  if (ALPHA < 0.015) { discard; }
  ROUGHNESS = 0.7;
 }

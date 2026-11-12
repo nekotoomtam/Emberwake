@@ -1,6 +1,7 @@
 extends SceneTree
 const Model = preload("res://scripts/loadout_inventory.gd")
 const SkillUI = preload("res://scripts/sword_skill_ui.gd")
+const RifleSkills = preload("res://scripts/rifle_motion.gd")
 class PanelFactory:
 	extends RefCounted
 	func panel() -> StyleBoxFlat: return StyleBoxFlat.new()
@@ -47,6 +48,9 @@ func _initialize() -> void:
 	var sword_before: Array = model.skill_slots.duplicate()
 	check(model.equip_skill(1, "mace_gather") and model.skill_slots == sword_before, "equipping mace does not alter sword slots")
 	check(copy.load_data() and copy.mace_skill_slots == model.mace_skill_slots and copy.mace_skill_slots[1] == "mace_gather", "mace slots survive save and reload")
+	check(model.equip_skill(2, RifleSkills.ARMOR_ROUND_ID) and model.skill_slots == sword_before
+		and model.mace_skill_slots[1] == "mace_gather", "rifle slots are independent")
+	check(copy.load_data() and copy.rifle_skill_slots == [RifleSkills.PIERCING_ROUND_ID, RifleSkills.MARK_ROUND_ID, RifleSkills.ARMOR_ROUND_ID], "rifle loadout swaps occupied slots and retains order when reopened")
 	var saved: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(PATH))
 	check(saved.version == 5 and saved.skill_slots.size() == 3, "schema version 5 includes exactly three slots")
 	var before: Array = model.skill_slots.duplicate()
@@ -66,6 +70,7 @@ func _initialize() -> void:
 		for id in absent: bag[bag.find(id)] = ""
 		write_data({"version": version, "bag": bag, "sets": legacy.sets, "active": legacy.active})
 		check(copy.load_data() and copy.valid_state() and copy.skill_slots == Model.DEFAULT_SKILLS, "v%d migration supplies default skills and retains inventory" % version)
+		check(copy.rifle_skill_slots == RifleSkills.DEFAULT_SLOTS, "older saves supply default rifle slots")
 	for value in [["stormcaller", "stormcaller", "unknown"], ["vacuum_slice"], [15, null, "square_off", "storm_blade"], "broken", []]:
 		saved.skill_slots = value
 		write_data(saved)

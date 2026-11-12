@@ -50,7 +50,11 @@ var _display_squash := 0.0
 var weapon_family: String = "sword"
 var _weapon_pivot := Vector2(12, 8)
 var _weapon_tip := Vector2(60, 8)
+var _blade_bounds := Rect2i()
+var articulated_equipment := false
+var _mount_priority := false
 var _blade_depth := Vector3.ZERO
+var rifle_raised_aim := false
 
 func _ready() -> void:
  body = AnimatedSprite3D.new()
@@ -117,7 +121,13 @@ func set_weapon_family(id: String) -> bool:
 func enable_cutout() -> void:
  cutout=CombatCutout.new()
  add_child(cutout)
- grip_visual.draw_sprites=false
+ use_articulated_equipment()
+
+func use_articulated_equipment() -> void:
+ articulated_equipment = true
+ grip_visual.draw_sprites = false
+ weapon.no_depth_test = false
+ _apply_weapon_art()
 
 func update_cutout(dual) -> void:
  if cutout==null or anatomy==null:return
@@ -136,11 +146,34 @@ func update_cutout(dual) -> void:
    floor_targets={"r":grip_visual.wrist_world,"l":grip_visual.support_world}
  cutout.pose(facing,body.animation,body.frame,clock,body.global_transform,cutout_tint,
   anatomy,dodge_pose,cutout_crawling,cutout_walking,cutout_phase,mounts,floor_targets)
+ var normal := cutout.billboard.global_basis.z.normalized()
  for rig in cutout.mount_offsets:
   rig.hand.global_position+=cutout.mount_offsets[rig]
+  # Keep the weapon in the body plane for a stable orthographic projection.
+  # Far weapons can be occluded by the body; near weapons clear its depth.
+  var depth := normal.dot(rig.hand.global_position - cutout.billboard.global_position)
+  rig.hand.global_position += normal * (cutout.mount_depths[rig] - depth)
+  rig._clear_blade_floor(normal, global_position.y)
+
+func _clear_blade_floor(camera_normal: Vector3, floor_height: float) -> void:
+ if not _blade_bounds.has_area() or camera_normal.y <= .001: return
+ if weapon_family == "rifle" and (not rifle_raised_aim or facing != "front"): return
+ # Along the orthographic view axis the rendered grip stays in the palm.
+ # Only the blade's depth changes when its flat sprite would cut into the floor.
+ var low_x := _blade_bounds.position.x if weapon.global_basis.x.y >= 0.0 else _blade_bounds.end.x
+ var low_y := _blade_bounds.end.y if weapon.global_basis.y.y >= 0.0 else _blade_bounds.position.y
+ var lowest := _texture_point_world(Vector2(low_x, low_y)).y
+ var lift := maxf(0.0, floor_height + .025 - lowest)
+ hand.global_position += camera_normal * (lift / camera_normal.y)
 
 func cutout_mount(rig,side: String) -> Dictionary:
- var result: Dictionary={"rig":rig,"side":side,"point":rig.grip_visual.wrist_world}
+ var front: bool = rig._mount_priority or facing=="front" or (facing=="left" and side=="l") or (facing=="right" and side=="r")
+ if rig.weapon_family in ["rifle", "pistol"] and facing == "back":
+  front = false
+ var result: Dictionary={"rig":rig,"side":side,"point":rig.grip_visual.wrist_world,
+  "front":front,
+  "hide_palms":rig.weapon_family=="shield" or (rig.weapon_family=="rifle" and facing=="front" and rig.rifle_raised_aim),
+  "axis":rig.weapon.global_basis.x}
  if rig.grip_visual.support_visible:
   result["other"]="r" if side=="l" else "l"
   result["support"]=rig.grip_visual.support_world
@@ -157,7 +190,10 @@ func _apply_weapon_art() -> void:
   "bow": art = BowArt
   "crossbow": art = CrossbowArt
   "shield": art = ShieldArt
- weapon.texture = art.texture()
+ weapon.texture = art.texture(not articulated_equipment) if weapon_family in ["sword", "greatsword", "mace", "staff", "pistol", "rifle"] else art.texture()
+ weapon.flip_v = false
+ rifle_raised_aim = false
+ _blade_bounds = weapon.texture.get_image().get_used_rect() if articulated_equipment and weapon_family in ["sword", "greatsword", "mace", "rifle"] else Rect2i()
  var geometry: Dictionary = art.geometry()
  _weapon_pivot = geometry.pivot
  _weapon_tip = geometry.tip
@@ -171,8 +207,26 @@ func get_blade_points() -> Dictionary:
 
 func _texture_point_world(point: Vector2) -> Vector3:
  var size := weapon.texture.get_size()
- var local := Vector3(point.x - size.x * 0.5 + weapon.offset.x, size.y * 0.5 - point.y + weapon.offset.y, 0.0) * weapon.pixel_size
+ var y := size.y - point.y if weapon.flip_v else point.y
+ var local := Vector3(point.x - size.x * 0.5 + weapon.offset.x, size.y * 0.5 - y + weapon.offset.y, 0.0) * weapon.pixel_size
  return weapon.global_transform * local
+
+func _orient_rifle_art(projected: Vector2, full_profile: bool) -> void:
+ var end_view := not full_profile and facing in ["front", "back"]
+ var art := RifleArt.end_view(facing == "back") if end_view else RifleArt.texture(false)
+ _apply_gun_view(art, not end_view and projected.x < 0.0)
+
+func _apply_gun_view(art: Texture2D, flip: bool) -> void:
+ weapon.texture = art
+ # A left-pointing sprite rotates nearly 180 degrees. Reflect across its
+ # shaft so the sight stays above the barrel and the grip stays below it.
+ weapon.flip_v = flip
+ var half := weapon.texture.get_size() * .5
+ var pivot_offset := _weapon_pivot.y - half.y
+ weapon.offset = Vector2(half.x - _weapon_pivot.x, -pivot_offset if weapon.flip_v else pivot_offset)
+
+func rifle_receiver() -> Vector3:
+ return _texture_point_world(Vector2(46, 18))
 
 func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictionary, reach: float, hurt: float, dodge: float, delta: float, dead: bool = false,dash: Dictionary={}) -> void:
  dodge_pose=dash if not dead else {}
@@ -181,12 +235,13 @@ func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictiona
  var push_amount: float=float(dodge_pose.get("amount",0.0)) if elbow_push else 0.0
  var dashing:=not dodge_pose.is_empty() and not elbow_push
  var paired_body: bool=sample.get("paired_body",false)
+ facing=Directions.choose(aim,camera,facing,Directions.COMBAT_FRONT_HALF_ANGLE)
  sample = _carry_pose(sample,aim,delta)
  sample.paired_body=paired_body
  clock += delta
  var phase: String = sample.get("phase", "idle")
+ rifle_raised_aim = false
  var facing_left: bool = camera.global_basis.x.dot(aim) < -0.05
- facing=Directions.choose(aim,camera,facing)
  var next_frames: SpriteFrames=DashArt.frames(facing,dodge_kind) if dashing else Directions.frames(facing,sample.get("paired_body",false) and not dead)
  if body.sprite_frames!=next_frames:
   var prior_animation: String=body.animation
@@ -249,6 +304,8 @@ func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictiona
   body.modulate=Color(1,1,1,0)
   back_hair.visible=false;pair_body_mask.visible=false
  weapon.visible = not dead
+ if weapon_family == "staff":
+  weapon.texture = StaffArt.texture(not articulated_equipment, sample.get("staff_element", "unattuned"))
  if weapon_family == "crossbow": weapon.texture = CrossbowArt.texture(sample.get("crossbow_loaded", false))
  if weapon_family == "bow": weapon.texture = BowArt.texture(int(sample.get("bow_tier", 0)))
  if dashing:
@@ -265,18 +322,58 @@ func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictiona
   var blade_vector := direction * cos(pitch) + Vector3.UP * sin(pitch)
   var grip_angle: float=sample.get("grip_angle",angle)
   var grip_direction := Vector3(cos(grip_angle),0,sin(grip_angle))
-  hand.global_transform = Transform3D(camera.global_basis, global_position + grip_direction * radius + Vector3.UP * grip_height)
+  hand.global_transform = Transform3D(camera.global_basis, global_position + grip_direction * radius + Vector3.UP * grip_height + camera.global_basis.x * float(sample.get("grip_side", 0.0)))
   var projected := Vector2(camera.global_basis.x.dot(blade_vector), camera.global_basis.y.dot(blade_vector))
+  if weapon_family == "rifle" and articulated_equipment:
+   var working_action := phase in ["bolt", "reload"]
+   rifle_raised_aim = not dashing and not working_action \
+    and bool(sample.get("rifle_aim_pose", false))
+   if rifle_raised_aim:
+    hand.global_position += camera.global_basis.y * (.22 if facing == "front" else .57)
+   if rifle_raised_aim and facing in ["front", "back"]:
+    var rear := facing == "back"
+    hand.global_position += camera.global_basis.x * (.25 if rear else -.13)
+    projected = Vector2(projected.x * .50 + .37, .44) if rear else Vector2(0, -.57)
+   elif working_action and facing in ["front", "back"]:
+    projected = Vector2(-.49 if facing == "front" else .49, maxf(.28, projected.y))
+   elif facing in ["front", "back"]:
+    # Cant the near-vertical screen pose around the muzzle. The stock shifts
+    # to the shoulder while the projected shot endpoint stays in place.
+    var cant := 1.0 - smoothstep(.08, .35, absf(projected.x))
+    var stock_shift := (.26 if facing == "back" else -.26) * cant
+    hand.global_position += camera.global_basis.x * stock_shift
+    projected.x -= stock_shift / blade_length
+   _orient_rifle_art(projected, working_action)
+  if weapon_family == "pistol" and articulated_equipment and phase == "reload" and facing in ["front", "back"]:
+   # Show the full profile through the reload spin, even end-on.
+   projected = Vector2(-.66 if facing == "front" else .66, .25)
+   hand.global_position += camera.global_basis.y * .14
+  var depth := camera.global_basis.z.dot(blade_vector)
+  var visible_length := projected.length()
+  var visible_width := 1.0
   weapon.rotation.z = atan2(projected.y, projected.x)
+  var flat_staff: bool = shows_axial_staff() \
+   and (phase == "idle" or sample.get("staff_loading", false))
+  if shows_flat_melee() or flat_staff:
+   var at_ground := weapon_family == "mace" and phase == "active" \
+    and absf(grip_height + blade_length * sin(pitch)) < .12
+   if not at_ground:
+    if visible_length < .18:
+     var point_on := 1.0 - smoothstep(.025, .18, visible_length)
+     weapon.rotation.z = lerp_angle(weapon.rotation.z, -signf(depth) * PI * .5, point_on)
+    visible_length = lerpf(.46, maxf(visible_length, .46), smoothstep(0.0, .58, visible_length))
+   visible_width += .14 * (1.0 - smoothstep(.28, .67, projected.length()))
   # Spin the already projected gun in the screen plane. The image offset
   # places the tiny hand exactly at this origin, so no orbit is introduced.
   if weapon_family == "pistol":
+   if articulated_equipment:
+    var end_view := phase != "reload" and facing in ["front", "back"] and absf(projected.x) < .5
+    var art := PistolArt.end_view(facing == "back") if end_view else PistolArt.texture(false)
+    _apply_gun_view(art, not end_view and projected.x < 0.0)
    weapon.rotation.z += float(sample.get("screen_roll", 0.0))
   weapon.pixel_size = blade_length / (_weapon_tip.x - _weapon_pivot.x)
-  # This removes only the camera-depth component. Pitch changes the rigid
-  # blade's projection rather than inventing a shorter physical weapon.
-  weapon.scale = Vector3(projected.length(), 1.0, 1.0)
-  _blade_depth = camera.global_basis.z * camera.global_basis.z.dot(blade_vector) * blade_length
+  weapon.scale = Vector3(visible_length, visible_width, 1.0)
+  _blade_depth = camera.global_basis.z * depth * blade_length
  else:
   hand.global_transform = Transform3D(camera.global_basis, global_position + direction * radius + Vector3(0, 0.68, 0))
   var projected := Vector2(camera.global_basis.x.dot(direction), camera.global_basis.y.dot(direction))
@@ -297,6 +394,7 @@ func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictiona
   ghost.visible=not dead and phase=="reload" and weapon_family=="pistol" and blur>.02
   if ghost.visible:
    ghost.texture=weapon.texture;ghost.offset=weapon.offset;ghost.pixel_size=weapon.pixel_size;ghost.scale=weapon.scale
+   ghost.flip_v=weapon.flip_v
    ghost.rotation.z=weapon.rotation.z-(.55+i*.45)
    ghost.render_priority=weapon.render_priority-1
    ghost.modulate=Color(.68,.88,1,(.18 if i==0 else .08)*blur)
@@ -314,8 +412,27 @@ func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictiona
   "bow":support_pixel=BowArt.string_point(int(sample.get("bow_tier",0)))
  var support: Vector3=_texture_point_world(support_pixel)
  var supported: bool = weapon_family in ["greatsword","staff","rifle","bow","crossbow"] or (weapon_family=="pistol" and not sample.get("paired_carry",false))
+ _mount_priority = phase != "idle" or sample.get("ready_carry", false) or dashing
+ if facing == "back" and sample.get("staff_loading", false): _mount_priority = false
  grip_visual.anatomy=anatomy
  grip_visual.primary_arm="left_arm" if sample.get("left_carry",false) else "right_arm"
+ if articulated_equipment:
+  match weapon_family:
+   "pistol":
+    primary = _texture_point_world(Vector2(14, 25))
+    support = _texture_point_world(Vector2(17, 28))
+    supported = supported and _mount_priority
+   "rifle":
+    primary = _texture_point_world(Vector2(25, 26))
+    var support_under_barrel := Vector2(68, 30)
+    var action_point := Vector2(46, 18) if phase == "bolt" else Vector2(48, 29)
+    support = _texture_point_world(support_under_barrel.lerp(action_point, float(sample.get("support_pull", 0.0))))
+   "crossbow":
+    primary = _texture_point_world(Vector2(12, 18))
+    support = _texture_point_world(Vector2(28, 17) - Vector2(11, 0) * float(sample.get("support_pull", 0.0)))
+   "bow":
+    grip_visual.primary_arm = "left_arm"
+    supported = _mount_priority
  var main_anchor: Vector3=dash_anchors[0] if dashing else sample.get("shoulder_world",Vector3.INF)
  var off_anchor: Vector3=dash_anchors[1] if dashing else Vector3.INF
  if anatomy!=null and not main_anchor.is_finite():
@@ -332,12 +449,26 @@ func update_pose(camera: Camera3D, aim: Vector3, walking: bool, sample: Dictiona
   supported=true
  grip_visual.update_grips(camera,global_position,primary,support,supported,sample.get("paired_carry",false),sample.get("left_carry",false) or facing_left,dead,main_anchor,off_anchor)
 
+func shows_flat_melee() -> bool:
+ return articulated_equipment and weapon_family in ["sword", "mace"]
+
+func shows_axial_staff() -> bool:
+ return articulated_equipment and weapon_family == "staff" and facing in ["front", "back"]
+
 func _carry_pose(sample: Dictionary,aim: Vector3,delta: float) -> Dictionary:
  if sample.get("stance_managed",false):return sample
  var idle: bool=sample.get("phase","idle")=="idle"
  var target := sample.duplicate(true)
+ if cutout != null and facing in ["front", "back"] and sample.get("staff_loading", false):
+  var angle := atan2(aim.z, aim.x)
+  target.merge(Stance.staff_axial_carry(angle, facing), true)
  if idle:
-  target=sample.duplicate(true) if sample.get("ready_carry",false) else Stance.rest(weapon_family,atan2(aim.z,aim.x))
+  var angle := atan2(aim.z, aim.x)
+  if cutout != null and (not sample.get("ready_carry", false) or weapon_family == "crossbow"):
+   target.merge(Stance.cutout_rest(weapon_family, angle, facing), true)
+   if weapon_family == "crossbow": target.ready_carry = false
+  elif not sample.get("ready_carry", false):
+   target = Stance.rest(weapon_family, angle)
   if _display_pose.is_empty():_display_pose=target.duplicate(true)
   _display_pose=Stance.blend(_display_pose,target,1-exp(-12*delta))
   _was_rest=true;_from_rest=false
@@ -359,6 +490,7 @@ func set_equipment_visible(value: bool) -> void:
 
 func body_point(pixel: Vector2) -> Vector3:
  return body.global_transform*Vector3((pixel.x-64)*PIXEL,(64-pixel.y)*PIXEL,.0)
+
 func paired_shoulders() -> Array[Vector3]:
  if cutout!=null:
   var pivots: Dictionary=cutout.character.PIVOT_DATA.data[facing]

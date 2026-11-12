@@ -194,7 +194,7 @@ func run() -> void:
 	check(game.staff_flight.active.size() == 1, "scaled vacuum releases one projectile")
 	if not game.staff_flight.active.is_empty():
 		var wave: Dictionary = game.staff_flight.active[0]
-		check(is_equal_approx(wave.damage, 68.8) and is_equal_approx(wave.speed, 8.4), "vacuum carries scaled damage and speed")
+		check(is_equal_approx(wave.damage, 92.4) and is_equal_approx(wave.speed, 8.4), "vacuum carries scaled damage and speed")
 		check(wave.max_range == 13.0 and wave.radius == .8, "scaled vacuum keeps its range and contact width")
 	fresh()
 	game.stats.attributes = {"intelligence": 8}
@@ -208,13 +208,13 @@ func run() -> void:
 	check(game.staff_flight.active.size() == 1, "scaled buff releases one wave per cut")
 	if not game.staff_flight.active.is_empty():
 		var wave: Dictionary = game.staff_flight.active[0]
-		check(is_equal_approx(wave.damage, 12.9) and is_equal_approx(wave.speed, 12.6), "buff wave uses the cast's INT scaling")
+		check(is_equal_approx(wave.damage, 15.4) and is_equal_approx(wave.speed, 12.6), "buff wave uses the cast's INT scaling")
 	fresh()
 	game.stats.attributes = {"strength": 8, "dexterity": 8}
 	target(game.player.position + Vector3.RIGHT * 1.6)
 	check(game._begin_skill("impaling_thrust"), "scaled melee skill starts normally")
 	advance(.8)
-	check(game.hits == 1 and is_equal_approx(game.total_damage, 43.0 * 1.1125), "melee contact applies combined STR and DEX scaling")
+	check(game.hits == 1 and is_equal_approx(game.total_damage, 51.0 * 1.15), "melee contact applies combined STR and DEX scaling")
 	game.queue_free()
 	await process_frame
 	print("SWORD SKILL REFINEMENTS: %d/%d checks passed" % [checks - failures.size(), checks])

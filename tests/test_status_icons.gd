@@ -51,7 +51,10 @@ func run() -> void:
 	game.sword_skills_open = false
 	game.tick(5.5)
 	check(game.ui.status_view.shown_effects.is_empty(), "expired player effects leave the HUD")
-	game.add_sanity(game.frenzy_threshold() + 1)
+	game.add_sanity(game.frenzy_threshold() - game.STAND_UP_SANITY)
+	game._iframes = 0.0
+	game.damage_player(game.health + 1.0)
+	check(game.stand_up(), "last stand can be entered at 200 sanity")
 	game.ui.refresh()
 	check("frenzy" in game.ui.status_view.shown_effects and "revelation" in game.ui.status_view.shown_effects, "both active sanity effects get an icon")
 	game.queue_free()

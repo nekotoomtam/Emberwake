@@ -47,6 +47,9 @@ const LABELS := {
 static func has_tag(definition: Dictionary, tag: StringName) -> bool:
 	return tag in definition.get("tags", [])
 
+static func is_area(definition: Dictionary) -> bool:
+	return has_tag(definition, AREA) or has_tag(definition, GROUND_AREA)
+
 static func label(tags: Array) -> String:
 	var names := PackedStringArray()
 	for tag: StringName in tags:

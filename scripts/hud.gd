@@ -52,6 +52,14 @@ var help_panel: PanelContainer
 var stamina_fill: StyleBoxFlat
 var bow_meter: HBoxContainer
 var ammo_text: Label
+var rifle_ammo_hud: Control
+var staff_reserve_hud: Control
+var rifle_ammo_strip: HBoxContainer
+var rifle_gear_large: TextureRect
+var rifle_gear_small: TextureRect
+var _rifle_gear_turn: Tween
+var _rifle_gear_steps: Array[float] = []
+var _rifle_gear_reversing := false
 var reload_bar: ProgressBar
 const LAYOUT_ICONS = preload("res://assets/ui/combat_hud_layout.svg")
 const GOLD = Color("#edc182")
@@ -187,6 +195,15 @@ func _ready() -> void:
 		var button_style:=compact_panel();button_style.content_margin_top=6;button_style.content_margin_bottom=6
 		if state=="hover":button_style.bg_color=Color("#324a50");button_style.border_color=GOLD
 		weapon_button.add_theme_stylebox_override(state,button_style)
+	_build_rifle_ammo_hud(root)
+	staff_reserve_hud = preload("res://scripts/staff_reserve_hud.gd").new()
+	root.add_child(staff_reserve_hud)
+	staff_reserve_hud.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	staff_reserve_hud.offset_left = -210
+	staff_reserve_hud.offset_top = -175
+	staff_reserve_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	staff_reserve_hud.bind(game.staff_energy)
+	staff_reserve_hud.hide()
 	ammo_text=label("",14,GOLD);ammo_text.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER;weapon_stack.add_child(ammo_text)
 	reload_bar=bar(GOLD);reload_bar.custom_minimum_size=Vector2(0,4);reload_bar.max_value=1;weapon_stack.add_child(reload_bar)
 	counter=label("",13,DIM);counter.horizontal_alignment=HORIZONTAL_ALIGNMENT_RIGHT;weapon_stack.add_child(counter)
@@ -404,12 +421,17 @@ func _build_companion_panel(root: Control) -> void:
 func _process(delta: float) -> void:
 	if not is_instance_valid(stamina_bar):
 		return
+	if rifle_ammo_hud.visible and _rifle_gear_turn == null and game.rifle_rapid_fire_left() > 0.0:
+		var step := TAU * 1.25 * delta
+		rifle_gear_large.rotation = fposmod(rifle_gear_large.rotation + step, TAU)
+		rifle_gear_small.rotation = fposmod(rifle_gear_small.rotation - step * 1.2, TAU)
 	if sanity_panel.visible: _animate_sanity_dial(delta)
 	if revelation_mist.visible and _revelation_elapsed < 1.35:
 		_animate_revelation_mist(delta)
 	var revive_target = game.revive_target
 	revive_bar.visible = is_instance_valid(revive_target) and game.mode == "combat"
 	if revive_bar.visible:
+		revive_bar.max_value = game.revive_duration()
 		revive_bar.value = game.revive_elapsed
 		var marker: Vector3 = revive_target.revive_marker.global_position
 		var center: Vector2 = game.camera.unproject_position(marker)
@@ -502,6 +524,60 @@ func dial_gear(parent: Control, region: Rect2, center: Vector2) -> TextureRect:
 	gear.position = center - gear.pivot_offset
 	parent.add_child(gear)
 	return gear
+
+func _build_rifle_ammo_hud(root: Control) -> void:
+	rifle_ammo_hud = Control.new()
+	rifle_ammo_hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rifle_ammo_hud.clip_contents = true
+	root.add_child(rifle_ammo_hud)
+	rifle_ammo_hud.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	rifle_ammo_hud.offset_left = -280
+	rifle_ammo_hud.offset_top = -106
+	rifle_ammo_hud.hide()
+
+	rifle_ammo_strip = preload("res://scripts/rifle_ammo_strip.gd").new()
+	rifle_ammo_hud.add_child(rifle_ammo_strip)
+	rifle_ammo_strip.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	rifle_ammo_strip.offset_right = -64
+	rifle_ammo_strip.offset_top = 39
+	rifle_ammo_strip.offset_bottom = 81
+	rifle_gear_large = dial_gear(rifle_ammo_hud, Rect2(2, 3, 28, 28), Vector2(257, 71))
+	rifle_gear_small = dial_gear(rifle_ammo_hud, Rect2(213, 20, 24, 24), Vector2(282, 29))
+	rifle_gear_large.scale = Vector2.ONE * 2.4
+	rifle_gear_small.scale = Vector2.ONE * 2.1
+	rifle_gear_small.rotation = -.15
+
+func turn_rifle_gears(loading: bool) -> void:
+	if not loading and game.rifle_rapid_fire_left() > 0.0: return
+	_rifle_gear_steps.append(-1.0 if loading else 1.0)
+	if _rifle_gear_turn == null:
+		_turn_next_rifle_gear_step()
+
+func start_rifle_rapid_gears() -> void:
+	for index in range(_rifle_gear_steps.size() - 1, -1, -1):
+		if _rifle_gear_steps[index] > 0.0: _rifle_gear_steps.remove_at(index)
+	if _rifle_gear_turn != null and not _rifle_gear_reversing:
+		_rifle_gear_turn.kill()
+		_turn_next_rifle_gear_step()
+
+func reset_rifle_gears() -> void:
+	if _rifle_gear_turn != null: _rifle_gear_turn.kill()
+	_rifle_gear_turn = null
+	_rifle_gear_steps.clear()
+	_rifle_gear_reversing = false
+	if is_instance_valid(rifle_gear_large):
+		rifle_gear_large.rotation = 0.0
+		rifle_gear_small.rotation = -.15
+
+func _turn_next_rifle_gear_step() -> void:
+	_rifle_gear_turn = null
+	if _rifle_gear_steps.is_empty(): return
+	var direction: float = _rifle_gear_steps.pop_front()
+	_rifle_gear_reversing = direction < 0.0
+	_rifle_gear_turn = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_rifle_gear_turn.tween_property(rifle_gear_large, "rotation", direction * TAU / 12.0, .26).as_relative()
+	_rifle_gear_turn.parallel().tween_property(rifle_gear_small, "rotation", -direction * TAU / 10.0, .26).as_relative()
+	_rifle_gear_turn.finished.connect(_turn_next_rifle_gear_step)
 
 
 func instrument_frame() -> StyleBoxFlat:
@@ -604,7 +680,7 @@ func show_mode(mode: String) -> void:
 		frenzy_border.hide()
 		sanity_panel.hide()
 		flask_tray.hide()
-	overlay.visible = mode in ["menu", "paused", "victory", "dead","shore_end"]
+	overlay.visible = mode in ["menu", "paused", "victory", "dead","shore_end","downed"]
 	for child in buttons.get_children():
 		buttons.remove_child(child)
 		child.queue_free()
@@ -641,11 +717,23 @@ func show_mode(mode: String) -> void:
 			description.text="คุณผ่านชายหาดเรือแตกมาถึงทางเข้าป่าแล้ว\nจบพื้นที่เปิดเรื่อง • พื้นที่ป่าถัดไปยังอยู่ระหว่างออกแบบ"
 			buttons.add_child(button("กลับไปริมหาด",game.start_wreck_shore))
 			buttons.add_child(button("กลับหน้าหลัก",game.return_menu))
+		"downed":
+			title.text = "ล้มลง"
+			var sanity_cost: int = game.stand_up_sanity_cost()
+			description.text = "ลุกขึ้นด้วยสติ +%d และฟื้นเลือด %d%%\nสติ %d → %d / 200" % [sanity_cost, roundi(game.stand_up_health_fraction() * 100.0), game.sanity, game.sanity + sanity_cost]
+			if game.sanity + sanity_cost >= game.frenzy_threshold():
+				description.text += "\nนี่คือการลุกครั้งสุดท้าย ถ้าล้มอีกจะเสียตัวละคร"
+			buttons.add_child(button("ลุกขึ้น [E]", game.stand_up))
 		"dead":
-			title.text = "เปลวไฟยังไม่ดับ"
-			description.text = "เว้นจังหวะให้คืนท่า แล้วหลบตอนศัตรูง้าง\nกำจัดแล้ว %d ตัว" % game.kills
-			buttons.add_child(button("ลองอีกครั้ง", game.restart))
-			buttons.add_child(button("กลับหน้าหลัก", game.return_menu))
+			if game.character_lost:
+				title.text = "สูญเสียตัวละคร"
+				description.text = "ตัวละครล้มหลังใช้โอกาสลุกครั้งสุดท้าย"
+				buttons.add_child(button("กลับท่าเรือ" if not game.expedition_recruit_id.is_empty() else "กลับหน้าหลัก", game.return_menu))
+			else:
+				title.text = "เปลวไฟยังไม่ดับ"
+				description.text = "เว้นจังหวะให้คืนท่า แล้วหลบตอนศัตรูง้าง\nกำจัดแล้ว %d ตัว" % game.kills
+				buttons.add_child(button("ลองอีกครั้ง", game.restart))
+				buttons.add_child(button("กลับหน้าหลัก", game.return_menu))
 
 	menu_scroll.custom_minimum_size.y=minf(380,buttons.get_child_count()*54)
 	menu_scroll.scroll_vertical=0
@@ -672,7 +760,7 @@ func refresh() -> void:
 	var gun: bool = pistol or rifle
 	var magazine = game.active_magazine()
 	if not game.loadout_mode:
-		weapon_button.text = {"shield": "โล่ [I]", "crossbow": "หน้าไม้ [I]", "bow": "ธนู [I]", "rifle": "ปืนยาว [I]", "pistol": "ปืนพก [I]", "staff": "คทาไฟ [I]", "mace": "กระบอง [I]", "greatsword": "ดาบใหญ่ [I]", "sword": "ดาบมือเดียว [I]"}.get(game.weapon_family, "อาวุธ [I]")
+		weapon_button.text = {"shield": "โล่ [I]", "crossbow": "หน้าไม้ [I]", "bow": "ธนู [I]", "rifle": "ปืนยาว [I]", "pistol": "ปืนพก [I]", "staff": "คทาธาตุ [I]", "mace": "กระบอง [I]", "greatsword": "ดาบใหญ่ [I]", "sword": "ดาบมือเดียว [I]"}.get(game.weapon_family, "อาวุธ [I]")
 	weapon_button.custom_minimum_size.y = 32 if gun else 42
 	ammo_text.visible = gun
 	ammo_text.text = "%d / %d • %s" % [magazine.rounds, magazine.capacity, "รีโหลด" if magazine.reloading else "R รีโหลด"]
@@ -790,14 +878,16 @@ func refresh() -> void:
 		stage_label = "%d/3 %s • %s" % [(game._loadout_attack_index if game.motion.busy else game._next_combo)+1, hand_hint, stage_label]
 	stage_text.modulate = Color("#ffdb8c") if phase == "active" else Color.WHITE
 	if rifle:
-		var cycle=game.active_magazine()
-		ammo_text.text="%d / %d • %s"%[cycle.rounds,cycle.capacity,{"open":"เปิดกลไก","insert":"เติมทีละนัด","close":"ปิดกลไก"}.get(cycle.phase,"ขึ้นลำ" if cycle.needs_bolt else "R เติมกระสุน")]
-		if cycle.reloading:reload_bar.value=cycle.action_progress()
+		var cycle = magazine
+		rifle_ammo_strip.show_rounds(game.rifle_display_queue(), cycle.capacity)
+		ammo_text.hide()
+		ammo_text.text = ""
+		reload_bar.hide()
 		stage_label="เล็ง • ปืนยาว" if game.rifle_aiming() else "ปืนยาว"
 		if game.motion.busy:stage_label="เตรียมยิง" if game.current_visual_sample().phase=="windup" else "ยิง / คืนท่า"
 		if cycle.needs_bolt or cycle.bolt_active:stage_label="ขึ้นลำก่อนยิง"
 		if cycle.reloading:stage_label="เติมกระสุนทีละนัด"
-		weapon_details="ปกติ: เป้าบาน • ขวา: เล็งไกล / ทะลุ • ยิงโดนสะสม Mark • R เติมทีละนัด • Q ชุด I ของ SPACE หลบ"
+		weapon_details="ปกติ: เป้าบาน • ขวา: เล็งไกล • ทะลุได้ 1 เป้าด้านหลังเมื่อยืนชิด • R เติมทีละนัด"
 	if game.primary_family() == "bow":
 		var bow_tier: int = game.bow_tier()
 		stage_label = "ชาร์จ %d/3" % bow_tier if bow_tier > 0 else "ธนู"
@@ -826,7 +916,12 @@ func refresh() -> void:
 		counter.text="กำจัด %d • %.1f วินาที"%[game.kills,game.run_time]
 
 	var study: bool=game.encounter_mode in ["village_study","coast_forms","wreck_shore"]
-	for panel_: Control in [header_panel,vital_panel,ammo_panel,help_panel]:panel_.visible=not study
+	for panel_: Control in [header_panel,vital_panel,ammo_panel]:panel_.visible=not study
+	help_panel.visible = not study and not rifle
+	var staff: bool = game.primary_family() == "staff"
+	staff_reserve_hud.visible = staff and not study and game.mode in ["practice", "combat"] and not game.inventory_open and not game.stats_open and not game.body_lab_open and not game.dungeon_peek.visible and not game.sword_skills_open
+	help_panel.offset_right = -216 if staff_reserve_hud.visible else -20
+	rifle_ammo_hud.visible = rifle and not study and game.mode in ["practice", "combat"] and not game.inventory_open and not game.stats_open and not game.body_lab_open and not game.dungeon_peek.visible
 	study_panel.visible=study and game.mode=="practice"
 	if game.encounter_mode=="wreck_shore":
 		study_panel.get_child(0).text="คลื่นพัดคุณมาเกยฝั่ง…  •  Enter ข้ามช่วงตื่น  •  ESC พัก" if not game.arena.intro_done() else ("เรือลำนั้น…  •  เดินเฉียงขึ้นขวาไปยังแนวป่า  •  WASD เดิน  •  SPACE แดช  •  T เริ่มใหม่  •  ESC พัก" if game.arena.reveal_seen else "ไม่มีอาวุธติดตัว  •  เดินเลียบหาดเฉียงขึ้นขวา  •  WASD เดิน  •  SPACE แดช  •  T เริ่มใหม่  •  ESC พัก")
@@ -841,10 +936,10 @@ func _refresh_mace_status() -> void:
 
 func _staff_instructions() -> void:
 	if game.primary_family()!="staff":return
-	ready_text.text="ขวาค้าง: เติมลูกไฟรอบคถา • ซ้ายค้างรวมพลัง / ปล่อยยิง"
-	control_hint.text="WASD เดิน • ขวาค้างเติมพลัง • ซ้ายค้างร่าย / ปล่อยยิง • SPACE หลบ"
-	weapon_hint.text="ลูกไฟรอบคถาคือพลังสำรอง • Q สลับชุด • I ของ • P สถานะ • ESC พัก"
-	stage_text.text="เติมพลัง" if game.staff_energy.loading else ("รวมพลัง" if game.staff_energy.casting else "คถาไฟ")
+	ready_text.text="R สลับธาตุ • คลิกซ้ายยิงลูกแก้วสีที่เลือก • กดช่องสกิลค้างเพื่อชาร์จไฟ"
+	control_hint.text="WASD เดิน • ขวาค้างเก็บลูกแก้ว • K จัดสกิล • SPACE หลบ"
+	weapon_hint.text="ลูกแก้วรอบคทาคือพลังสำรอง • Q สลับชุด • I ของ • P สถานะ • ESC พัก"
+	stage_text.text="เปลี่ยนธาตุ" if game.staff_energy.switching else ("เติมพลัง" if game.staff_energy.loading else ("รวมพลัง" if game.staff_energy.casting else "คถาไฟ"))
 
 func compact_panel() -> StyleBoxFlat:
 	var style:=panel()
@@ -879,9 +974,7 @@ func _arrange_status_and_hints(weapon_details: String) -> void:
 	sanity_warning.visible = game.sanity >= game.frenzy_threshold()
 	frenzy_border.visible = active and game.frenzy
 	if frenzy_border.visible:
-		ready_text.text = "คลั่ง • ระวังท่าแดง • ใช้ยาฟื้นเลือดไม่ได้"
-	elif active and game.health <= 0.0:
-		ready_text.text = "วิกฤต • เลือด 0 • โดนชิ้นส่วนเพิ่มสติ"
+		ready_text.text = "โอกาสสุดท้าย • ถ้าล้มอีกจะเสียตัวละคร"
 	weapon_hint.tooltip_text=weapon_details
 	weapon_hint.text="R รีโหลด • Q ชุด • I ของ • P สถานะ • H ตรวจ • T ใหม่ • M เสียง • ESC พัก"
 	if game.primary_family() == "crossbow":weapon_hint.text = "ยิงโดนสร้างแผลลึก • ขึ้นลำขณะเดินช้าได้ • I ของ"

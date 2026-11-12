@@ -27,22 +27,27 @@ func _test_staff_art() -> void:
 	var image := texture.get_image()
 	_check(texture is ImageTexture and texture == staff_art.texture(), "staff supplies one cached native pixel ImageTexture")
 	_check(texture.get_size() == Vector2(96, 40), "staff keeps a small 96x40 pixel canvas")
-	_check(geometry.pivot == Vector2(12, 20) and geometry.tip == Vector2(92, 20), "tiny hand and fire crown share the rigid staff axis")
+	_check(geometry.pivot == Vector2(12, 20) and geometry.tip == Vector2(92, 20), "tiny hand and crystal share the rigid staff axis")
 	_check(image.get_used_rect() == Rect2i(4, 4, 88, 32), "staff has transparent padding around its complete silhouette")
 	var skin := 0
 	var wood := 0
-	var bronze := 0
-	var fire := 0
+	var silver := 0
 	for y in image.get_height():
 		for x in image.get_width():
 			var color := image.get_pixel(x, y)
 			_check(color.a == 0.0 or color.a == 1.0, "staff alpha remains crisp at %d,%d" % [x, y])
 			if color.is_equal_approx(Color("ffd4ad")): skin += 1
-			if color.is_equal_approx(Color("83523e")): wood += 1
-			if color.is_equal_approx(Color("c38c4f")): bronze += 1
-			if color.r > 0.7 and color.g > 0.15 and color.g < 0.7 and color.b < 0.3: fire += 1
+			if color.is_equal_approx(Color("5b4851")): wood += 1
+			if color.is_equal_approx(Color("b4c5d2")): silver += 1
 	_check(skin == 16 and image.get_pixel(12, 20).is_equal_approx(Color("ffd4ad")), "exactly one tiny four-pixel hand is attached at the pivot")
-	_check(wood >= 128 and bronze >= 96 and fire >= 96, "staff reads as wood, bronze crown and warm fire gem")
+	_check(wood >= 128 and silver >= 96, "staff reads as wood and a silver crystal setting")
+	var crystal_colors := {"unattuned": "a0aec9", "fire": "ff9349", "ice": "73dcff", "lightning": "ba9aff", "neutral": "554168"}
+	for element: String in crystal_colors:
+		var variant: Texture2D = staff_art.texture(true, element)
+		var variant_image := variant.get_image()
+		_check(variant_image.get_used_rect() == image.get_used_rect(), "staff silhouette bounds match for " + element)
+		_check(variant_image.get_pixel(72, 20).is_equal_approx(Color(crystal_colors[element])), "staff crystal displays the palette for " + element)
+		_check(variant_image.get_pixel(24, 20).is_equal_approx(image.get_pixel(24, 20)), "staff shaft retains its color for " + element)
 	for x in range(4, 92):
 		_check(image.get_pixel(x, 20).a > 0.0, "staff silhouette remains connected along the grip-to-tip axis at %d" % x)
 	for y in range(0, 40, 4):
@@ -72,7 +77,7 @@ func _test_hero_projection() -> void:
 	camera.look_at(Vector3.ZERO)
 	await process_frame
 	_check(hero.body.sprite_frames == load("res://scripts/pixel_art.gd").frames("player"), "staff keeps the accepted heroine's original animation frames")
-	_check(hero.weapon.texture == staff_art.texture(), "staff selects the original fire-crown texture")
+	_check(hero.weapon.texture == staff_art.texture(), "staff initially uses the unattuned crystal texture")
 	var aims := [Vector3.RIGHT, Vector3.BACK, Vector3.LEFT, Vector3.FORWARD]
 	for direction: Vector3 in aims:
 		for pitch: float in [-0.3, 0.0, 0.55, 1.1]:

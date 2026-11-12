@@ -7,11 +7,15 @@ const CORE := Vector2(28, 12)
 static var _texture: Texture2D
 var bullet: Sprite3D
 var contact_radius:=PIXEL_SIZE
+var length_scale := 1.0
 func configure_contact(radius: float) -> void:
 	if is_finite(radius) and radius>0:contact_radius=radius
 
 func _ready() -> void:
 	_ensure_sprite()
+
+func tint_tracer(color: Color) -> void:
+	bullet.modulate = color
 
 func _ensure_sprite() -> void:
 	if bullet != null: return
@@ -31,7 +35,7 @@ func update_visual(camera: Camera3D, direction: Vector3, _age: float) -> void:
 	var angle := atan2(projected.y, projected.x) if projected.length_squared() > 0.000001 else 0.0
 	# Keep streak length; scale its cross section to the swept bullet radius.
 	var pixels: float=preload("res://scripts/projectile_image_geometry.gd").cross_radius(_frame_texture(),CORE)
-	bullet.global_basis = camera.global_basis * Basis(Vector3.BACK, angle) * Basis.from_scale(Vector3(1,contact_radius/(PIXEL_SIZE*pixels),1))
+	bullet.global_basis = camera.global_basis * Basis(Vector3.BACK, angle) * Basis.from_scale(Vector3(length_scale,contact_radius/(PIXEL_SIZE*pixels),1))
 
 static func _frame_texture() -> Texture2D:
 	if _texture != null: return _texture

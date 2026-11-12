@@ -74,19 +74,24 @@ func _test_attribute_scaling() -> void:
 	var motion = Motion.new()
 	var stats := {"strength": 8, "dexterity": 8, "intelligence": 8}
 	var cases := {
-		"impaling_thrust": [43 * 1.1125],
-		"double_slash": [23 * 1.075, 26 * 1.075],
-		"square_off": [0, 47 * 1.075, 53 * 1.075],
-		"sword_dance": [22 * 1.075, 22 * 1.075, 40 * 1.075],
-		"spinning_slash": [30 * 1.1125, 30 * 1.1125],
+		"impaling_thrust": [51 * 1.15],
+		"double_slash": [27 * 1.10, 31 * 1.10],
+		"square_off": [0, 57 * 1.10, 66 * 1.10],
+		"sword_dance": [29 * 1.10, 29 * 1.10, 45 * 1.10],
+		"spinning_slash": [36 * 1.15, 36 * 1.15],
 		"storm_blade": [0],
-		"stormcaller": [27 * 1.075, 31 * 1.075, 35 * 1.1125],
-		"vacuum_slice": [68.8],
+		"stormcaller": [31 * 1.10, 36 * 1.10, 42 * 1.15],
+		"vacuum_slice": [84 * 1.10],
 	}
 	for id: String in cases:
 		check(motion.configure(id, stats), "configure scaling for " + id)
 		for index in range(motion.stage_count()):
 			check(is_equal_approx(motion.definition(index).damage, cases[id][index]), "scaled damage for %s stage %d" % [id, index])
+		check(motion.configure(id, stats, 24), "configure upgraded sword for " + id)
+		for index in range(motion.stage_count()):
+			check(is_equal_approx(motion.definition(index).damage, cases[id][index] * 1.2), "weapon power reaches %s stage %d" % [id, index])
+	motion.configure("storm_blade", {"intelligence": 8}, 24)
+	check(motion.definition(0).wave_damage.is_equal_approx(Vector3(16.8, 19.2, 22.8) * 1.10), "weapon power and INT reach all three buff waves")
 	motion.configure("double_slash", stats)
 	var quick: Dictionary = motion.definition(1)
 	check(is_equal_approx(quick.windup + quick.active + quick.recovery, .255 * .9375), "DEX shortens each double slash phase")
@@ -99,7 +104,7 @@ func _test_attribute_scaling() -> void:
 	check(Motion.mana_cost("vacuum_slice", stats) == 31.5 and Motion.mana_cost("storm_blade", stats) == 21.5, "INT discounts the two wave skills")
 	check(Motion.mana_cost("stormcaller", stats) == 38, "stormcaller keeps its base cost")
 	motion.configure("vacuum_slice", {"intelligence": 100, "dexterity": 100})
-	check(is_equal_approx(motion.definition(0).damage, 83.2) and is_equal_approx(motion.definition(0).projectile_speed, 9.2), "damage and projectile speed respect caps")
+	check(is_equal_approx(motion.definition(0).damage, 117.6) and is_equal_approx(motion.definition(0).projectile_speed, 9.2), "damage and projectile speed respect caps")
 	check(is_equal_approx(motion.definition(0).windup, .65 * .85) and is_equal_approx(Motion.mana_cost("vacuum_slice", {"intelligence": 100}), 27.2), "timing and mana discounts respect caps")
 
 func _test_entry_pose() -> void:

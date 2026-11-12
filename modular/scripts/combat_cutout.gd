@@ -14,6 +14,8 @@ var character: Node2D
 var billboard: Sprite3D
 var grip_errors := {}
 var mount_offsets := {}
+var mount_depths := {}
+var palms: Dictionary = {}
 
 
 func _ready() -> void:
@@ -28,6 +30,14 @@ func _ready() -> void:
 	billboard.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	billboard.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
 	add_child(billboard)
+	for side in ["r", "l"]:
+		var palm := Sprite3D.new()
+		palm.pixel_size = PIXEL_SIZE
+		palm.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		palm.render_priority = 6
+		palm.hide()
+		add_child(palm)
+		palms[side] = palm
 
 
 func apply_look(look: Dictionary) -> void:
@@ -91,6 +101,8 @@ func pose(view: String, animation: String, frame: int, clock: float, body_transf
 
 	grip_errors.clear()
 	mount_offsets.clear()
+	mount_depths.clear()
+	for palm: Sprite3D in palms.values(): palm.hide()
 	for mount: Dictionary in mounts:
 		fit_mount(mount)
 	for side: String in floor_targets:
@@ -120,44 +132,64 @@ func fit_mount(mount: Dictionary) -> void:
 	var main_center := arm_center(side)
 	var main_reach := arm_reach(side)
 	var other: String = mount.get("other", "")
+	var axis: Vector3 = billboard.global_basis.inverse() * mount.axis
+	var wrist_angle := clampf(atan2(-axis.y, absf(axis.x)), -.58, .58)
+	if axis.x < 0.0: wrist_angle *= -1.0
+	var support_target := Vector2.ZERO
 	if not other.is_empty():
 		var span := to_pixel(mount.support)-original
-		var near := span.normalized()*minf(1.2,span.length())
 		var support_center := arm_center(other)
 		var support_reach := arm_reach(other)
+		# Preserve the authored grip separation whenever both arms can reach.
+		var allowed_span := (main_reach + support_reach) * .90
+		span = support_center - main_center + (span - (support_center - main_center)).limit_length(allowed_span)
 		for pass_index in 12:
 			grip = main_center + (grip-main_center).limit_length(main_reach)
-			grip = support_center - near + (grip+near-support_center).limit_length(support_reach)
-		var low := 0.0
-		var high := 1.0
-		for sample_index in 10:
-			var t := (low+high)*.5
-			if (grip+near.lerp(span,t)).distance_to(support_center) <= support_reach:
-				low=t
-			else:
-				high=t
-		record_grip(other,grip+near.lerp(span,low))
+			grip = support_center - span + (grip+span-support_center).limit_length(support_reach)
+		support_target = grip + span
 	else:
 		grip = main_center + (grip-main_center).limit_length(main_reach)
-	record_grip(side,grip)
+	record_grip(side, grip, wrist_angle)
 	var hand: Node2D = character.joints["hand_"+side]
-	var delta := (hand.to_global(PALM)-original)*PIXEL_SIZE
+	var final_grip := hand.to_global(PALM)
+	var delta := (final_grip-original)*PIXEL_SIZE
 	mount_offsets[mount.rig] = billboard.global_basis*Vector3(delta.x,-delta.y,0)
+	var front: bool = mount.front
+	mount_depths[mount.rig] = .045 if front else -.045
+	if not other.is_empty():
+		record_grip(other, support_target + final_grip - grip, wrist_angle)
+	if front and not mount.hide_palms:
+		show_palm(side)
+		if not other.is_empty(): show_palm(other)
 
 
-func record_grip(side: String, pixel: Vector2) -> void:
-	aim_arm(side, pixel)
+func show_palm(side: String) -> void:
+	var art: Sprite2D = character.art["hand_" + side]
+	if not art.visible or art.texture == null: return
+	var palm: Sprite3D = palms[side]
+	var pixel := art.to_global(art.offset + art.texture.get_size() * .5)
+	var center := (pixel - CENTER) * PIXEL_SIZE
+	palm.texture = art.texture
+	palm.modulate = billboard.modulate
+	palm.global_transform = Transform3D(
+		billboard.global_basis * Basis(Vector3.BACK, -art.global_rotation),
+		billboard.global_transform * Vector3(center.x, -center.y, .085))
+	palm.show()
+
+
+func record_grip(side: String, pixel: Vector2, wrist_angle: float) -> void:
+	aim_arm(side, pixel, wrist_angle)
 	var hand: Node2D = character.joints["hand_"+side]
 	grip_errors[side] = hand.to_global(PALM).distance_to(pixel)*PIXEL_SIZE
 
 
-func aim_arm(side: String, target: Vector2) -> void:
+func aim_arm(side: String, target: Vector2, wrist_angle: float = 0.0) -> void:
 	var upper: Node2D = character.joints["upper_arm_"+side]
 	var fore: Node2D = character.joints["forearm_"+side]
 	var hand: Node2D = character.joints["hand_"+side]
 	# Work in the shoulder's parent plane so inherited torso tilt is accounted for.
 	var local: Vector2 = upper.get_parent().to_local(target) - upper.position
-	var wrist := local - PALM.rotated(-character.joints.torso.global_rotation)
+	var wrist := local - PALM.rotated(wrist_angle - character.joints.torso.global_rotation)
 	var stretch := clampf(wrist.length() / (fore.position.length() + hand.position.length() - 0.08),1.0,MAX_STRETCH)
 	stretch_link(character.art["upper_arm_"+side], fore.position, stretch)
 	stretch_link(character.art["forearm_"+side], hand.position, stretch)
@@ -174,9 +206,12 @@ func aim_arm(side: String, target: Vector2) -> void:
 	var end := Vector2.from_angle(wrist.angle())*reach
 	upper.rotation = angle_difference(fore.position.angle(),elbow.angle())
 	fore.rotation = angle_difference(hand.position.angle(),(end-elbow).angle())-upper.rotation
-	hand.global_rotation = 0.0
-	for prefix in ["upper_arm_", "forearm_", "hand_"]:
-		character.art[prefix+side].z_index = 12 if side=="r" else 11
+	hand.global_rotation = wrist_angle
+	var view: String = character.view_name
+	var near := view=="front" or (view=="left" and side=="l") or (view=="right" and side=="r")
+	if near:
+		character.art["forearm_"+side].z_index = 11
+		character.art["hand_"+side].z_index = 12
 
 
 func stretch_link(sprite: Sprite2D, along: Vector2, amount: float) -> void:

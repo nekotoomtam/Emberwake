@@ -1,7 +1,13 @@
 extends RefCounted
 ## Actual loaded rounds, mechanical readiness and presentation are separate.
 var capacity:=5
-var rounds:=5
+var _queue: Array[Dictionary] = [{}, {}, {}, {}, {}]
+var rounds: int:
+ get: return _queue.size()
+ set(value):
+  var target := clampi(value, 0, capacity)
+  while _queue.size() > target: _queue.pop_back()
+  while _queue.size() < target: _queue.append({})
 var reload_duration:=2.65
 var reloading:=false
 var elapsed:=.0
@@ -14,13 +20,46 @@ var bolt_duration:=.66
 var spent_case:=false
 var cycle_debt:=.0
 var close_time:=.2
+var rapid_fire_left := 0.0
 var events: Array[String]=[]
 func configure(_definition: Dictionary) -> bool:reset();return true
-func configure_shot(aimed: bool) -> void:bolt_duration=.92 if aimed else .66
+func configure_shot(aimed: bool, timing_scale: float = 1.0) -> void:bolt_duration=(.92 if aimed else .66)*timing_scale
 func can_fire() -> bool:return rounds>0 and not reloading and not needs_bolt and not bolt_active
-func consume() -> bool:
+func prepare_round(round_id: String, count: int = 1) -> bool:
+ if round_id.is_empty() or not can_fire() or count < 1 or rounds < count:return false
+ # All rounds from this activation share its first-shot cooldown flag.
+ var batch := {"id": round_id, "fired": false}
+ for i in count:
+  _queue.pop_back()
+ for i in count:
+  _queue.push_front(batch)
+ return true
+
+func refill_now(count: int) -> bool:
+ if count < 1 or rounds + count > capacity: return false
+ rounds += count
+ cancel_reload()
+ _eject()
+ needs_bolt = false
+ return true
+
+func next_round() -> Dictionary:
+ return {} if _queue.is_empty() else _queue[0]
+
+func round_ids() -> Array[String]:
+ var ids: Array[String] = []
+ for round_data in _queue: ids.append(round_data.get("id", ""))
+ return ids
+
+func consume(skip_bolt: bool = false) -> bool:
  if not can_fire():return false
- rounds-=1;needs_bolt=true;bolt_elapsed=0;spent_case=true;return true
+ var fired_round: Dictionary = _queue.pop_front()
+ if not fired_round.is_empty(): fired_round.fired = true
+ needs_bolt=true;bolt_elapsed=0;spent_case=true
+ if skip_bolt:
+  _eject()
+  needs_bolt = false
+ return true
 func start_bolt() -> bool:
  if not needs_bolt or reloading:return false
  bolt_active=true;bolt_elapsed=0;return true
@@ -69,8 +108,10 @@ func cancel_reload() -> void:
  if reloading:needs_bolt=true
  reloading=false;phase="";phase_elapsed=0;elapsed=0;cancel_bolt()
 func reset() -> void:
+ _queue.clear()
  rounds=capacity;reloading=false;elapsed=0;phase="";phase_elapsed=0
  needs_bolt=false;bolt_active=false;bolt_elapsed=0;bolt_duration=.66;spent_case=false;events.clear()
+ rapid_fire_left = 0.0
 
 func _start_close() -> void:
  phase="close";phase_elapsed=0;close_time=maxf(.2,cycle_debt)

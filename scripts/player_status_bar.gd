@@ -10,7 +10,7 @@ class EffectIcon extends Control:
  func _draw() -> void:
   var c:=Vector2(17,17)
   draw_style_box(_box(Color("#13232b"),tint),Rect2(1,1,32,32))
-  if kind=="tempo":
+  if kind in ["tempo","rapid"]:
    for x in [10,17]:draw_polyline(PackedVector2Array([Vector2(x,9),Vector2(x+7,17),Vector2(x,25)]),tint,3,false)
   elif kind=="counter":
    draw_line(Vector2(10,25),Vector2(25,8),tint,4)
@@ -51,13 +51,14 @@ func _ready() -> void:
  add_theme_constant_override("v_separation",6)
  var effects := [
   ["tempo","ยิงเร็ว",Color("#8fe9da")],
+  ["rapid","ยิงต่อเนื่อง",Color("#ffce82")],
   ["counter","สวนกลับ",Color("#ffd365")],
   ["break","เสียการ์ด",Color("#ff8c88")],
   ["wind","ดาบเคลือบลม",Color("#84dafa")],
   ["ember","งัดเพลิง",Color("#ffae69")],
   ["heal","ฟื้นเลือด",Color("#8ee6a9")],
   ["revelation","ญาณเปิด",Color("#bbabff")],
-  ["frenzy","คลุ้มคลั่ง",Color("#ff9aae")],
+  ["frenzy","โอกาสสุดท้าย",Color("#ff9aae")],
   ["focus","เล็งปืนยาว",Color("#b7e6ef")],
   ["terrain","เดินช้าจากพื้น",Color("#88c9e8")],
   ["protected","กันความเสียหาย",Color("#dce6a9")],
@@ -73,6 +74,8 @@ func _ready() -> void:
 func refresh(game) -> void:
  shown_effects.clear()
  _show("tempo",game.primary_family()=="pistol" and game.pistol_aim_state.stacks>0,"+%d%% โจมตี"%roundi(game.pistol_aim_state.speed_bonus()*100),game.pistol_aim_state.stacks,-1)
+ var rapid_left: float=game.rifle_rapid_fire_left()
+ _show("rapid",rapid_left>0.0,"%.1f วิ"%rapid_left,0,rapid_left/game.RifleMotion.RAPID_FIRE_DURATION)
  _show("counter",game.rewards.counter_left>0,"ท่า 3 • %.1f วิ"%game.rewards.counter_left,0,game.rewards.counter_left/game.rewards.COUNTER_WINDOW)
  _show("break",game.readiness.broken_left>0,"%.1f วิ"%game.readiness.broken_left,0,game.readiness.broken_left/game.readiness.BREAK_TIME)
  var wind_left: float=game.sword_wave_buff_left
@@ -83,7 +86,7 @@ func refresh(game) -> void:
  var flask_left: float=0.0 if game.flasks.effects.is_empty() else game.flasks.effects.max()
  _show("heal",flask_left>0,"+%.0f HP/วิ"%game.flasks.rate(),game.flasks.effects.size(),flask_left/game.flasks.EFFECT_SECONDS)
  _show("revelation",game.has_sanity_revelation(),"เห็นสิ่งที่ซ่อน",0,-1)
- _show("frenzy",game.frenzy,"ฟื้น HP ถูกระงับ",0,-1)
+ _show("frenzy",game.frenzy,"ล้มอีกครั้งจะเสียตัวละคร",0,-1)
  var focus: float=game.rifle_focus_state.amount()
  _show("focus",game.primary_family()=="rifle" and focus>0,"ระยะมอง +%d%%"%roundi((game.rifle_focus_state.sight_multiplier()-1.0)*100),0,focus)
  var terrain_speed := 1.0

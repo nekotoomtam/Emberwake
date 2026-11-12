@@ -128,7 +128,7 @@ func run() -> void:
 		if not game.skill_active: break
 		game.tick(1.0 / 120.0)
 		peak_stagger = maxf(peak_stagger, target.stagger)
-	check(game.hits == 1 and is_equal_approx(game.total_damage, 43.0) and is_equal_approx(peak_stagger, 0.20), "thrust deals 43 and staggers the target for 0.20 seconds")
+	check(game.hits == 1 and is_equal_approx(game.total_damage, 51.0) and is_equal_approx(peak_stagger, 0.20), "thrust deals 51 and staggers the target for 0.20 seconds")
 	fresh()
 	game.enemies[0].position = game.player.position + Vector3.LEFT * 5.0
 	var full_mana: float = game.mana
@@ -156,7 +156,7 @@ func run() -> void:
 			damage_steps.append(game.total_damage - before_damage)
 			stagger_steps.append(target.stagger)
 	recovered_mana = (game.run_time - cast_start) * 0.5
-	check(damage_steps == [23.0, 26.0] and is_equal_approx(game.mana, recovered_mana), "the two cuts deal 23 and 26 without a second charge")
+	check(damage_steps.size() == 2 and is_equal_approx(damage_steps[0], 27.0) and is_equal_approx(damage_steps[1], 31.0) and is_equal_approx(game.mana, recovered_mana), "the two cuts deal 27 and 31 without a second charge")
 	check(stagger_steps.size() == 2 and is_equal_approx(stagger_steps[1], .25), "the return cut staggers the same target for 0.25 seconds")
 	check(game._double_slash_first_hits.is_empty(), "first-cut targets are cleared after the cast")
 	fresh()
@@ -170,7 +170,7 @@ func run() -> void:
 			target.position = game.player.position + Vector3.RIGHT * 1.6
 		game.tick(1.0 / 120.0)
 		peak_stagger = maxf(peak_stagger, target.stagger)
-	check(game.hits == 1 and is_equal_approx(game.total_damage, 26.0) and is_equal_approx(peak_stagger, .15), "return cut alone deals its damage and keeps the ordinary hit reaction")
+	check(game.hits == 1 and is_equal_approx(game.total_damage, 31.0) and is_equal_approx(peak_stagger, .15), "return cut alone deals its damage and keeps the ordinary hit reaction")
 	fresh()
 	game.loadout.equip_skill(1, "square_off")
 	key(KEY_2)
@@ -229,6 +229,17 @@ func run() -> void:
 	game.toggle_body_lab()
 	check(not game.body_lab_open, "body lab cannot open behind skill catalog")
 	game.toggle_sword_skills()
+	fresh()
+	game.loadout.active = 0
+	game.loadout.sets[0].main = "sword0"
+	game.loadout.sets[0].off = ""
+	game.loadout.items.sword0.sword_power = 24.0
+	game.loadout_edited()
+	game.loadout.equip_skill(0, "double_slash")
+	check(game.request_skill_slot(0), "the equipped stronger sword can use a skill")
+	check(is_equal_approx(game.motion.definition(0).damage, 32.4), "the skill reads power from the equipped sword")
+	finish_cast()
+	check(game.request_attack() and is_equal_approx(game.motion.definition(0).damage, 21.6), "the basic cut uses the same equipped sword power")
 	game.queue_free()
 	await process_frame
 	print("SWORD SKILLS GAME: %d/%d checks passed" % [checks - failures.size(), checks])

@@ -9,7 +9,8 @@ func run() -> void:
  var faces: Array=[]
  for aim in [Vector3.BACK,Vector3.FORWARD,Vector3.LEFT,Vector3.RIGHT]:
   game.aim=aim;game._visual_tick(.01)
-  check(game.avatar.back_hair.visible==(game.avatar.facing=="back"),"rear hair occludes weapon only when facing away")
+  var legacy_back_hair: bool = game.avatar.facing == "back" and game.avatar.anatomy == null
+  check(game.avatar.back_hair.visible == legacy_back_hair, "rear hair overlay belongs to the legacy body")
   var im: Image=game.avatar.body.sprite_frames.get_frame_texture("idle",0).get_image()
   faces.append(im.get_data().hex_encode())
  check(faces[0]!=faces[1],"back is an original rear drawing, not front art")
@@ -32,5 +33,20 @@ func run() -> void:
  for prior in ["right","front"]:
   for angle in [PI/4-.01,PI/4+.01,PI/4-.02,PI/4+.02]:
    check(directions.choose(Vector3(cos(angle),0,sin(angle)),game.camera,prior)==prior,"diagonal hysteresis prevents flicker")
+ for depth: Vector3 in [Vector3.BACK, Vector3.FORWARD]:
+  var vertical := "front" if depth.z > 0.0 else "back"
+  for horizontal: Vector3 in [Vector3.LEFT, Vector3.RIGHT]:
+   var side := "left" if horizontal.x < 0.0 else "right"
+   game.aim = depth
+   game._visual_tick(.01)
+   check(game.avatar.facing == vertical, "straight aim retains " + vertical)
+   game.aim = (depth + horizontal).normalized()
+   game._visual_tick(.01)
+   check(game.avatar.facing == side, "combat diagonal favors " + side)
+   var boundary := deg_to_rad(directions.COMBAT_FRONT_HALF_ANGLE)
+   for offset: float in [-.01, .01]:
+    var near_boundary := depth * cos(boundary + offset) + horizontal * sin(boundary + offset)
+    check(directions.choose(near_boundary, game.camera, side, directions.COMBAT_FRONT_HALF_ANGLE) == side, "side holds near combat boundary")
+    check(directions.choose(near_boundary, game.camera, vertical, directions.COMBAT_FRONT_HALF_ANGLE) == vertical, "front or rear holds near combat boundary")
  game.queue_free();await process_frame
  print("FOUR DIRECTIONS: ","PASS" if failures.is_empty() else "FAIL", " ",JSON.stringify(failures));quit(0 if failures.is_empty() else 1)

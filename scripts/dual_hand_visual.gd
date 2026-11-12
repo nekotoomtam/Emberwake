@@ -59,7 +59,7 @@ func blend(a: Dictionary,b: Dictionary,t: float) -> Dictionary:
 func update_hands(camera: Camera3D, direction: Vector3, item_ids: Array, families: Array, active_hand: int, sample: Dictionary, attacking: bool, delta: float, dead: bool, center_primary: bool=false,body_facing: String="",shoulders: Array=[],dash: Dictionary={},ready_mode: String="") -> void:
 	visible=not dead
 	var angle := atan2(direction.z,direction.x)
-	if body_facing=="":body_facing=Hero.Directions.choose(direction,camera,"front")
+	if body_facing=="":body_facing=Hero.Directions.choose(direction,camera,"front",Hero.Directions.COMBAT_FRONT_HALF_ANGLE)
 	for i in range(2):
 		var rig = rigs[i]
 		var family: String=families[i]

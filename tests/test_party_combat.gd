@@ -48,6 +48,9 @@ func run() -> void:
 	var old_room: Dictionary = game.dungeon.rooms[game.dungeon.current]
 	var direction: Vector2i = old_room.links.keys()[0]
 	game.dungeon.enter(game, game.dungeon.current + direction, -direction)
+	# Exercise reviving away from the doorway that starts a room transition.
+	game.player.position = Vector3(0.0, .03, 0.0)
+	game.place_companions()
 	game.clear_actors()
 	game.dungeon.rooms[game.dungeon.current].cleared = true
 	var carries_down: bool = guard.get("downed") == true and guard.visible and gunner.visible
@@ -87,7 +90,7 @@ func run() -> void:
 	var waits_full_duration: bool = guard.downed and game.revive_elapsed > 1.48
 	game.tick(1.0 / 120.0)
 	press_revive(false)
-	var revived: bool = waits_full_duration and is_equal_approx(guard.health, guard.max_health() * .30) and not guard.downed
+	var revived: bool = waits_full_duration and is_equal_approx(guard.health, guard.max_health() * .50) and guard.sanity == 40 and not guard.downed
 	game.player.position = start
 	game.clear_actors()
 	game.dungeon.rooms[game.dungeon.current].cleared = true
@@ -100,13 +103,14 @@ func run() -> void:
 	for frame in 54: game.tick(1.0 / 120.0)
 	var fired_under_pressure: bool = gunner.attacks_committed > shots and close_target.health < close_health
 	gunner.hurt_left = 0.0
-	gunner.receive_hit(80.0)
-	var took_cover: bool = gunner.recalling() and is_equal_approx(gunner.health, 20.0)
+	var retreat_health: float = gunner.max_health() * .20
+	gunner.receive_hit(gunner.health - retreat_health)
+	var took_cover: bool = gunner.recalling() and is_equal_approx(gunner.health, retreat_health)
 	shots = gunner.attacks_committed
 	for frame in 360: game.tick(1.0/120.0)
 	var waited: bool = gunner.recalling() and gunner.attacks_committed == shots
 	for frame in 340: game.tick(1.0/120.0)
-	var reengaged: bool = not gunner.recalling() and gunner.attacks_committed > shots and is_equal_approx(gunner.health, 20.0)
+	var reengaged: bool = not gunner.recalling() and gunner.attacks_committed > shots and is_equal_approx(gunner.health, retreat_health)
 	game.clear_actors()
 	game.player.position = Vector3(0.0, .03, 0.0)
 	gunner.place(Vector3(1.0, .03, 0.0))

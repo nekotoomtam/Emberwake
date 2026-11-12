@@ -6,6 +6,7 @@ const INSTANT_HEAL := 25.0
 const HEAL_PER_SECOND := 5.0
 const EFFECT_SECONDS := 5.0
 
+var healing_multiplier := 1.0
 var charges: int = RUN_CHARGES
 var effects: Array[float] = []
 
@@ -19,7 +20,7 @@ func drink(current: float, cap: float) -> float:
 	if charges <= 0: return current
 	charges -= 1
 	effects.append(EFFECT_SECONDS)
-	return minf(cap, current + INSTANT_HEAL)
+	return minf(cap, current + INSTANT_HEAL * healing_multiplier)
 
 func advance(delta: float, current: float, cap: float) -> float:
 	if not is_finite(delta) or delta < 0.0 or not _valid_health(current, cap):
@@ -30,10 +31,10 @@ func advance(delta: float, current: float, cap: float) -> float:
 		healing += elapsed * HEAL_PER_SECOND
 		effects[index] -= elapsed
 		if effects[index] <= 0.0: effects.remove_at(index)
-	return minf(cap, current + healing)
+	return minf(cap, current + healing * healing_multiplier)
 
 func rate() -> float:
-	return effects.size() * HEAL_PER_SECOND
+	return effects.size() * HEAL_PER_SECOND * healing_multiplier
 
 func cancel_effects() -> void:
 	effects.clear()

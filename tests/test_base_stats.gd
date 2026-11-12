@@ -53,7 +53,7 @@ func run() -> void:
    var cost: float=game.attack_cost(family,stage)
    if family=="staff":
     check(game.begin_staff_load(),"staff preparation starts");await step(.450001);game.staff_energy.stop_load()
-    check(game.begin_staff_cast() and game.release_staff_cast(),"staff spends prepared ammo")
+    check(game.request_staff_basic(),"staff spends one prepared orb for a basic shot")
    else:check(game.request_attack(),family+" starts")
    close(game.stamina,100-cost,family+" stage"+str(stage)+" pays once")
    if game.motion.is_great_charging():game.release_great_charge()

@@ -48,6 +48,16 @@ func _test_art() -> void:
 	var connected := true
 	for x in range(10, 59): connected = connected and image.get_pixel(x, 18).a > 0.0
 	_check(connected, "tiny hand, receiver and muzzle form one continuous rigid silhouette")
+	var profile := pistol_art.texture(false).get_image() as Image
+	var original := profile.get_data()
+	for rear: bool in [false, true]:
+		var view: Texture2D = pistol_art.end_view(rear)
+		var pixels := view.get_image()
+		_check(view == pistol_art.end_view(rear) and view.get_size() == texture.get_size(), "end view uses the same cached canvas")
+		_check(pixels.get_pixel(10, 18).a == 1.0 and pixels.get_pixel(58, 18).a == 1.0, "end view retains the grip and muzzle")
+		_check(pixels.get_pixel(20, 15).is_equal_approx(profile.get_pixel(20, 15)), "brass receiver matches the side art")
+	_check(pistol_art.end_view(false) != pistol_art.end_view(true), "front and rear are separate drawings")
+	_check(pistol_art.texture(false).get_image().get_data() == original, "end view painting does not mutate the side art")
 	geometry.pivot = Vector2.ZERO
 	_check(pistol_art.geometry().pivot == Vector2(10, 18), "caller cannot mutate cached gun geometry")
 

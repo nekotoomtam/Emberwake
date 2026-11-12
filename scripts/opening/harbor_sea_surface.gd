@@ -15,6 +15,7 @@ var far_mesh: MeshInstance3D
 var shore_mesh: MeshInstance3D
 var water_material: ShaderMaterial
 var shore_material: ShaderMaterial
+var reflection_texture: Texture2D
 var clock: float=0.0
 var near_vertex_count:=0
 var far_vertex_count:=0
@@ -34,12 +35,33 @@ func _ready() -> void:
  name="OpenSea"
  water_material=ShaderMaterial.new();water_material.shader=WaterShader
  water_material.set_shader_parameter("mean_level",MEAN_LEVEL)
+ var waterline:=PackedVector4Array()
+ for segment in shore_segments:
+  var a: Vector2=segment.a
+  var b: Vector2=segment.b
+  waterline.append(Vector4(a.x,a.y,b.x,b.y))
+ water_material.set_shader_parameter("waterline",waterline)
  shore_material=ShaderMaterial.new();shore_material.shader=ShoreShader;shore_material.render_priority=2
  _build_water();_build_shore();set_clock(clock)
 func set_clock(value: float) -> void:
  clock=value
  if water_material!=null:water_material.set_shader_parameter("clock",clock)
  if shore_material!=null:shore_material.set_shader_parameter("clock",clock)
+func sync_player_reflection(sprite: Sprite3D) -> void:
+ var visible_player:=is_instance_valid(sprite) and sprite.is_visible_in_tree() and sprite.texture!=null
+ water_material.set_shader_parameter("player_reflection_visible",visible_player)
+ if not visible_player:return
+ if sprite.texture!=reflection_texture:
+  reflection_texture=sprite.texture
+  water_material.set_shader_parameter("player_reflection_texture",reflection_texture)
+ var pose:=sprite.global_transform
+ var rect:=sprite.get_item_rect()
+ var center:=rect.get_center()
+ var origin:=pose.origin+(pose.basis.x*center.x-pose.basis.y*center.y)*sprite.pixel_size
+ water_material.set_shader_parameter("player_reflection_origin",origin)
+ water_material.set_shader_parameter("player_reflection_right",pose.basis.x.normalized())
+ water_material.set_shader_parameter("player_reflection_up",pose.basis.y.normalized())
+ water_material.set_shader_parameter("player_reflection_size",rect.size*sprite.pixel_size*Vector2(pose.basis.x.length(),pose.basis.y.length()))
 func surface_height(at: Vector2,time: float) -> float:
  return Spectrum.height(at,time)
 func _axis(start: float,end: float,cells: int) -> PackedFloat32Array:

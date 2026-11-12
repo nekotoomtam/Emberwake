@@ -16,7 +16,7 @@ const FIRE_SCOOP_GRIP_HEIGHT := .70
 const FIRE_SCOOP_PITCH := -asin(FIRE_SCOOP_GRIP_HEIGHT / WEAPON_LENGTH)
 const FIRE_SCOOP_FRACTION := .18
 const FIRE_LIFT := {"kind": "fire_lift", "windup": .19, "active": .20, "recovery": .19,
-	"damage": 22.0, "reach": 2.1, "arc": 0.0, "width": .85, "knockback": 1.6, "impact_progress": .58}
+	"reach": 2.1, "arc": 0.0, "width": .85, "knockback": 1.6, "impact_progress": .58}
 const ATTACKS: Array[Dictionary] = [
 	{"kind": "lift", "windup": 0.23, "active": 0.13, "recovery": 0.21, "damage": 34.0, "reach": LIFT_HAND_RADIUS + WEAPON_LENGTH, "arc": 0.0, "width": 0.7, "knockback": 2.3, "impact_progress": LIFT_CONTACT_PROGRESS},
 	{"kind": "lunge", "windup": 0.05, "active": 0.13, "recovery": 0.14, "damage": 12.0, "reach": LUNGE_HAND_RADIUS + WEAPON_LENGTH, "arc": 0.0, "width": 0.7, "knockback": 0.8, "impact_progress": 0.8, "lunge_distance": LUNGE_DISTANCE},
@@ -32,12 +32,15 @@ var _locked_aim := 0.0
 var _entry_pose: Dictionary = {}
 var _held_pose: Dictionary = {}
 var fire_lift := false
+var _fire_lift_damage := 0.0
 
 func start(index: int, angle: float) -> bool:
 	return _start(index, angle, false)
 
-func start_fire_lift(index: int, angle: float) -> bool:
-	return _start(index, angle, true)
+func start_fire_lift(index: int, angle: float, damage: float) -> bool:
+	if not _start(index, angle, true): return false
+	_fire_lift_damage = damage
+	return true
 
 func _start(index: int, angle: float, use_fire_lift: bool) -> bool:
 	if busy or index < 0 or index >= ATTACKS.size() or not is_finite(angle):
@@ -56,7 +59,10 @@ func _start(index: int, angle: float, use_fire_lift: bool) -> bool:
 	return true
 
 func definition(index: int) -> Dictionary:
-	if fire_lift and index in [0, 1]: return FIRE_LIFT
+	if fire_lift and index in [0, 1]:
+		var attack := FIRE_LIFT.duplicate()
+		attack.damage = _fire_lift_damage
+		return attack
 	return {} if index < 0 or index >= ATTACKS.size() else ATTACKS[index].duplicate(true)
 
 func advance(delta: float) -> Dictionary:

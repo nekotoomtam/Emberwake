@@ -1,16 +1,10 @@
 extends SceneTree
 const Parts=preload("res://scripts/body_parts_visual.gd")
 const Directions=preload("res://scripts/hero_directions.gd")
+const Anatomy=preload("res://scripts/anatomy_state.gd")
 const Hero=preload("res://scripts/hero_visual.gd")
 var checks:=0
 var failures: Array[String]=[]
-class AnatomyFixture extends RefCounted:
- var missing: Dictionary={}
- var integrity: Dictionary={}
- func present(id: String)->bool:return not missing.get(id,false)
- func functional(id: String)->bool:return present(id) and integrity.get(id,100)>0
- func arm_count()->int:return int(functional("right_arm"))+int(functional("left_arm"))
- func leg_count()->int:return int(functional("right_leg"))+int(functional("left_leg"))
 func _initialize()->void:call_deferred("run")
 func check(ok: bool,label: String)->void:
  checks+=1
@@ -45,24 +39,24 @@ func run()->void:
  DirAccess.make_dir_recursive_absolute("user://body_visual_evidence")
  atlas.save_png("user://body_visual_evidence/layers.png")
  var hero:=Hero.new();world.add_child(hero)
- var anatomy:=AnatomyFixture.new();hero.anatomy=anatomy
+ var anatomy:=Anatomy.new();hero.anatomy=anatomy
  for facing: String in Directions.DIRECTIONS:
   var aim: Vector3={"front":Vector3.BACK,"back":Vector3.FORWARD,"left":Vector3.LEFT,"right":Vector3.RIGHT}[facing]
   hero.update_pose(camera,aim,false,{"phase":"idle"},2,0,0,.01)
   for id: String in Parts.PARTS:
-   anatomy.missing={id:true}
+   anatomy.reset();anatomy.remove(id)
    hero.update_pose(camera,aim,false,{"phase":"idle"},2,0,0,.01)
-   for other: String in Parts.PARTS:check(hero.modular_body.parts[other].visible==(other!=id),facing+" missing "+id+" actual sprite "+other)
-  anatomy.missing={}
+   for other: String in Parts.PARTS:check(hero.modular_body.parts[other].visible==((other!=id or id=="torso")),facing+" missing "+id+" actual sprite "+other)
+  anatomy.reset()
   check(hero.body.modulate.a==0 and not hero.back_hair.visible and not hero.pair_body_mask.visible,"legacy whole body and overlays suppressed")
- anatomy.missing={"right_leg":true,"left_leg":true,"right_arm":true,"left_arm":true}
+ for limb: String in Anatomy.LIMBS:anatomy.remove(limb)
  hero.update_pose(camera,Vector3.BACK,true,{"phase":"idle"},2,0,0,.01)
  check(hero.body.global_position.y<.5,"no legs: body is floor-low")
  check(not hero.grip_visual.primary.visible and not hero.grip_visual.support.visible,"no arms: no procedural sleeves remain")
- anatomy.missing={};anatomy.integrity={"right_arm":0}
+ anatomy.reset();anatomy.set_integrity("right_forearm",0)
  hero.update_pose(camera,Vector3.BACK,false,{"phase":"idle"},2,0,0,.01)
  check(hero.modular_body.parts.right_arm.visible,"zero integrity arm present but weak")
- check(not hero.grip_visual.primary.visible,"zero integrity arm cannot hold a weapon")
+ check(hero.grip_visual.primary.visible,"zero integrity arm still holds a weapon")
  hero.anatomy=null
  hero.update_pose(camera,Vector3.BACK,false,{"phase":"idle"},2,0,0,.01)
  check(not hero.modular_body.visible and hero.body.modulate.a==1,"null anatomy retains legacy rendering")

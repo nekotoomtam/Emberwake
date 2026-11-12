@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Enemy = preload("res://scripts/enemy.gd")
+const StaffMotion = preload("res://scripts/staff_motion.gd")
 var checks := 0
 var failures: Array[String] = []
 var scene: Node3D
@@ -31,6 +32,7 @@ func _run() -> void:
 		await _test_range_boundary_and_high_delta()
 		await _test_subdivision()
 		await _test_real_cover_order()
+		await _test_charged_bursts()
 		await _test_muzzle_launch_path()
 		await _test_dead_invalid_and_elite_targets()
 		await _test_clear_and_bounded_history()
@@ -201,6 +203,62 @@ func _test_real_cover_order() -> void:
 	_spawn()
 	_tick(1.0, [equal])
 	_near(equal.health, 38.0, "solid cover wins equal-distance contact")
+
+func _test_charged_bursts() -> void:
+	var staff := StaffMotion.new()
+	staff.set_cast_tier(2)
+	var middle := staff.definition(0)
+	await _fresh()
+	var primary = _enemy(Vector3(3, 0, 0))
+	var side = _enemy(Vector3(3, 0, 1.2))
+	for target in [primary, side]: target.health = 500.0
+	_spawn(Vector3(0, .9, 0), Vector3.RIGHT, middle)
+	_tick(1.0, [side, primary])
+	_near(500.0 - primary.health, 84.0, "middle charge direct target is excluded from splash")
+	_near(500.0 - side.health, 36.0, "middle charge deals splash to a nearby off-axis target")
+	await _fresh()
+	side = _enemy(Vector3(6, 0, 1.25))
+	side.health = 500.0
+	_spawn(Vector3(0, .9, 0), Vector3.RIGHT, middle)
+	_tick(1.0, [side])
+	_check(manager.resolved.back().reason == "range", "charged fireball reaches the range limit")
+	_near(500.0 - side.health, 36.0, "a near miss can be caught by the burst at maximum range")
+	await _fresh()
+	_wall(2.0)
+	side = _enemy(Vector3(1.45, 0, .82))
+	var behind = _enemy(Vector3(2.6, 0, .1))
+	for target in [side, behind]: target.health = 500.0
+	await physics_frame
+	await physics_frame
+	_spawn(Vector3(0, .9, 0), Vector3.RIGHT, middle)
+	_tick(1.0, [side, behind])
+	_check(manager.resolved.back().reason == "cover", "charged fireball bursts at the wall")
+	_near(500.0 - side.health, 36.0, "wall burst hits the exposed side")
+	_near(500.0 - behind.health, 0.0, "wall blocks splash damage on the other side")
+	staff.set_cast_tier(3)
+	var full := staff.definition(0)
+	await _fresh()
+	primary = _enemy(Vector3(3, 0, 0))
+	var second = _enemy(Vector3(4.4, 0, 0))
+	side = _enemy(Vector3(4.1, 0, 1.5))
+	for target in [primary, second, side]: target.health = 500.0
+	_spawn(Vector3(0, .9, 0), Vector3.RIGHT, full)
+	_tick(1.0, [side, second, primary])
+	var record: Dictionary = manager.resolved.back()
+	_check(record.reason == "hit_limit" and record.hitids.size() == 2, "full charge bursts after two direct hits")
+	_near(500.0 - primary.health, 135.0, "first direct target takes full damage once")
+	_near(500.0 - second.health, 101.25, "second direct target takes reduced damage once")
+	_near(500.0 - side.health, 65.0, "full charge burst hits a third, off-axis target")
+	await _fresh()
+	primary = _enemy(Vector3(3, 0, 0))
+	second = _enemy(Vector3(6, 0, 0))
+	for target in [primary, second]: target.health = 500.0
+	_spawn(Vector3(0, .9, 0), Vector3.RIGHT, full)
+	_tick(1.0, [second, primary])
+	record = manager.resolved.back()
+	_check(record.reason == "pierce_limit" and record.hitids.size() == 1, "full charge stops when there is no nearby second contact")
+	_near(record.position.distance_to(record.first_exit_position), .75, "the remaining flight starts at the first target's exit")
+	_near(500.0 - second.health, 65.0, "a target past penetration reach only takes splash damage")
 
 func _test_muzzle_launch_path() -> void:
 	# Catches a physical staff tip spawning beyond nearby monsters or through solid cover.

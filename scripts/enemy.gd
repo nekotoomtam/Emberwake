@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 var crossbow_wound_ticks := 0
 var crossbow_wound_time := 0.0
+var crossbow_wound_from_player := true
 const Attacks=preload("res://scripts/enemy_attacks.gd")
 const AttackVisual=preload("res://scripts/enemy_attack_visual.gd")
 var attack_visual
@@ -32,6 +33,13 @@ var stagger: float = 0.0
 var movement_slow := 0.0
 var movement_slow_remaining := 0.0
 var movement_slow_duration := 0.0
+const ICE_SLOW_PER_HIT := .10
+const ICE_SLOW_DURATION := 5.0
+const ICE_SLOW_LIMIT := 3
+var ice_slow_stacks := 0
+var ice_slow_remaining := 0.0
+const ICE_ROOT_DURATION := .75
+var ice_root_remaining := 0.0
 var _mace_pull_target := Vector3.ZERO
 var _mace_pull_left := 0.0
 var knockback := Vector3.ZERO
@@ -169,8 +177,20 @@ func apply_movement_slow(fraction: float, duration: float) -> void:
 	movement_slow_remaining = duration
 	movement_slow_duration = duration
 
+func apply_ice_slow() -> void:
+	if dead: return
+	ice_slow_stacks = mini(ice_slow_stacks + 1, ICE_SLOW_LIMIT)
+	ice_slow_remaining = ICE_SLOW_DURATION
+
+func ice_slow_fraction() -> float:
+	return ice_slow_stacks * ICE_SLOW_PER_HIT
+
 func movement_speed_scale() -> float:
-	return 1.0 - movement_slow
+	if ice_root_remaining > 0.0: return 0.0
+	return 1.0 - maxf(movement_slow, ice_slow_fraction())
+
+func apply_ice_root() -> void:
+	if not dead: ice_root_remaining = ICE_ROOT_DURATION
 
 func gather_to(center: Vector3) -> void:
 	var offset := global_position - center
@@ -199,6 +219,9 @@ func advance_combat_status(delta: float) -> void:
 	_advance_mace_pull(delta)
 	movement_slow_remaining = 0.0 if dead else maxf(0.0, movement_slow_remaining - delta)
 	if movement_slow_remaining == 0.0: movement_slow = 0.0
+	ice_slow_remaining = 0.0 if dead else maxf(0.0, ice_slow_remaining - delta)
+	if ice_slow_remaining == 0.0: ice_slow_stacks = 0
+	ice_root_remaining = 0.0 if dead else maxf(0.0, ice_root_remaining - delta)
 
 func tick(delta: float, game, advance_status: bool = true) -> void:
 	if not is_finite(delta) or delta <= 0: return
@@ -296,4 +319,4 @@ func receive_burn(amount: float) -> void:
 
 func apply_rifle_mark() -> bool:
 	if dead:return false
-	rifle_mark.add();return true
+	return rifle_mark.add()

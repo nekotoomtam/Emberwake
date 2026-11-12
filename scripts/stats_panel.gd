@@ -4,6 +4,7 @@ var surface: Control
 var left: Label
 var right: Label
 var attributes_text: Label
+var talents_text: Label
 func _ready() -> void:
  layer=30
  surface=Control.new();surface.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT);add_child(surface)
@@ -20,14 +21,23 @@ func _ready() -> void:
  column.add_child(game.ui.label("ค่าสแตมิน่า: ดาบ 8/8/12 • ดาบใหญ่ 14/14/20 • กระบอง 12/8/18",18))
  column.add_child(game.ui.label("คทา 14 • ปืนพก 3 / เล็ง 3.9 • ปืนยาว 10 / เล็ง 15 • แดช 30",18))
  column.add_child(game.ui.label("ฟื้นพลัง: ปกติ 100% • เล็ง/กัน/รีโหลด 50% • โจมตี/แดช 0%",17,game.ui.DIM))
+ talents_text=game.ui.label("",16,game.ui.GOLD)
+ talents_text.custom_minimum_size.x=860
+ talents_text.autowrap_mode=TextServer.AUTOWRAP_WORD_SMART
+ talents_text.mouse_filter=Control.MOUSE_FILTER_STOP
+ column.add_child(talents_text)
  var close:=Button.new();close.text="กลับไปเล่น [P / ESC]";close.custom_minimum_size.y=42;close.pressed.connect(game.toggle_stats);column.add_child(close)
  surface.visible=false
 func entry(title: String,key: String,mult: float=1,suffix: String="") -> String:
  return "%s   %s%s → %s%s\n"%[title,str(float(game.stats.base[key])*mult),suffix,str((game.max_health() if key=="max_health" else game.stats.value(key))*mult),suffix]
 func refresh() -> void:
- attributes_text.visible = not game.stats.attributes.is_empty()
+ talents_text.visible = not game.stats.talents.is_empty()
+ if talents_text.visible:
+  talents_text.text = "ทาเลนต์ตัวหลัก %d / %d   •   %s" % [game.stats.talents.size(), game.Talents.MAX_SLOTS, game.Talents.summary(game.stats.talents).replace("\n", "  ·  ")]
+  talents_text.tooltip_text = game.Talents.summary(game.stats.talents, true)
+ attributes_text.visible = not game.stats.attributes.is_empty() or game.stats.level != 1
  if attributes_text.visible:
-  var lines := PackedStringArray(["ตัวหลัก  •  " + game.CharacterStats.level_one_text(game.stats.attributes)])
+  var lines := PackedStringArray(["ตัวหลัก  •  " + game.CharacterStats.level_one_text(game.stats.attributes, game.stats.level)])
   for index in game.companions.size():
    var recruit: Dictionary = game.expedition_companions[index]
    lines.append(str(recruit.get("name", "Sub %d" % (index + 1))) + "  •  " + game.CharacterStats.level_one_text(game.companions[index].stats.attributes))

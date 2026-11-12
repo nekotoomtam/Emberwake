@@ -9,7 +9,10 @@ func _ready() -> void:
  game=game_scene.instantiate()
  game.use_cutout_avatar=true
  game.expedition_companions=party.slice(1,3)
- if not party.is_empty():game.expedition_leader_attributes=party[0].get("attributes", {})
+ if not party.is_empty():
+  game.expedition_leader_attributes=party[0].get("attributes", {})
+  game.expedition_leader_talents=party[0].get("talents", {})
+  game.expedition_recruit_id=party[0].get("roster_id","")
  if Engine.has_meta("harbor_native_qa"):game.loadout.save_path=""
  add_child(game)
  if not party.is_empty():
