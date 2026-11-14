@@ -10,6 +10,7 @@ const CENTRAL_WHARVES := "res://assets/city_backdrop/waterfront.png"
 const ROOFS := "res://assets/city_backdrop/rooftops.png"
 const UPPER_TERRACE := "res://assets/city_backdrop/upper-terrace.png"
 const UPPER_BASE := 17.0
+const PIER_X := [75, 325, 565, 815]
 
 var geometry_count := 0
 var painted_districts: Matte
@@ -32,7 +33,7 @@ func _ready() -> void:
 			var back := (row + 1) * TERRACE_DEPTH / 5.0
 			geometry.quad(_site(x, front), _site(x + 20, front), _site(x + 20, back),
 				_site(x, back), streets if row == 0 else ground)
-	for x: int in [75, 325, 565, 815]:
+	for x: int in PIER_X:
 		var at := _site(x, 0)
 		geometry.box(at + Vector3(0, -1.2, 17), Vector3(15, 2.8, 37), masonry)
 		geometry.box(at + Vector3(0, 0.22, 17), Vector3(15.6, 0.34, 37.4), streets)
@@ -68,6 +69,18 @@ func _ready() -> void:
 			mat.uv1_offset.x += mat.uv1_scale.x
 			mat.uv1_scale.x *= -1.0
 	geometry_count = geometry.count + painted_districts.geometry_count
+
+
+func water_color_edges() -> PackedVector4Array:
+	var edges := PackedVector4Array()
+	for x: int in range(FIRST_X, LAST_X, 60):
+		var a := _site(x, 0)
+		var b := _site(mini(x + 60, LAST_X), 0)
+		edges.append(Vector4(a.x, a.z, b.x, b.z))
+	for x: int in PIER_X:
+		var at := _site(x, 0)
+		edges.append(Vector4(at.x, at.z, at.x, at.z + 35.5))
+	return edges
 
 
 func _panel(id: String, path: String, x: float, width: float, depth: float, y: float) -> Dictionary:

@@ -88,6 +88,7 @@ func _ready() -> void:
  horizon_fill=preload("res://scripts/opening/harbor_city_horizon_fill.gd").new();horizon_fill.source_matte=city_matte;horizon_fill.source_waterfront=hybrid_waterfront;horizon_fill.ridge_material=materials.leaves;add_child(horizon_fill)
  city_continuation=preload("res://scripts/opening/harbor_city_continuation.gd").new();city_continuation.source_matte=city_matte;add_child(city_continuation)
  far_shore_city=preload("res://scripts/opening/harbor_far_shore_city.gd").new();add_child(far_shore_city)
+ _color_harbor_water()
  geometry_count+=far_shore_city.geometry_count
  chimney_smoke=preload("res://scripts/opening/harbor_chimney_smoke.gd").new();chimney_smoke.outlets=backdrop.chimney_outlets+hybrid_waterfront.chimney_outlets;add_child(chimney_smoke)
  dock_life=preload("res://scripts/opening/harbor_dock_life.gd").new();dock_life.world=self;add_child(dock_life)
@@ -104,6 +105,20 @@ func _water() -> void:
  sea_surface=preload("res://scripts/opening/harbor_sea_surface.gd").new()
  add_child(sea_surface)
  water_material=sea_surface.water_material
+func _color_harbor_water() -> void:
+ var edges: PackedVector4Array=far_shore_city.water_color_edges()
+ edges.append(Vector4(-19.55,-20,-19.55,-220))
+ edges.append(Vector4(7,2.3,7,-3.0))
+ for berth: Dictionary in backdrop.district.berths:
+  var half_width: float=berth.width*.5
+  var start: Vector3=berth.start
+  var end: Vector3=berth.end
+  edges.append(Vector4(start.x,start.z-half_width,end.x,end.z-half_width))
+  edges.append(Vector4(start.x,start.z+half_width,end.x,end.z+half_width))
+  edges.append(Vector4(end.x,end.z-half_width,end.x,end.z+half_width))
+ water_material.set_shader_parameter("harbor_color_edge_count",edges.size())
+ edges.resize(48)
+ water_material.set_shader_parameter("harbor_color_edges",edges)
 func _box(at: Vector3,size: Vector3,mat: Material,solid: bool=false) -> void:
  main.box(at,size,mat)
  if solid:

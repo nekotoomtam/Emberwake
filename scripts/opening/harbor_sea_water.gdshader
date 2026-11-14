@@ -3,6 +3,8 @@ render_mode unshaded,cull_disabled,shadows_disabled;
 uniform float clock=0.0;
 uniform float mean_level=-0.85;
 uniform vec4 waterline[7];
+uniform vec4 harbor_color_edges[48];
+uniform int harbor_color_edge_count=0;
 uniform bool player_reflection_visible=false;
 uniform sampler2D player_reflection_texture : source_color,filter_linear,repeat_disable;
 uniform vec3 player_reflection_origin;
@@ -16,13 +18,15 @@ float water_noise(vec2 p){
  vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.0-2.0*f);
  return mix(mix(water_hash(i),water_hash(i+vec2(1,0)),f.x),mix(water_hash(i+vec2(0,1)),water_hash(i+vec2(1,1)),f.x),f.y);
 }
+float edge_distance(vec2 p,vec4 edge){
+ vec2 span=edge.zw-edge.xy;
+ float along=clamp(dot(p-edge.xy,span)/max(dot(span,span),0.001),0.0,1.0);
+ return length(p-edge.xy-span*along);
+}
 float distance_to_quay(vec2 p){
  float nearest=100.0;
  for(int i=0;i<7;i++){
-  vec2 a=waterline[i].xy;
-  vec2 span=waterline[i].zw-a;
-  float along=clamp(dot(p-a,span)/max(dot(span,span),0.001),0.0,1.0);
-  nearest=min(nearest,length(p-a-span*along));
+  nearest=min(nearest,edge_distance(p,waterline[i]));
  }
  return nearest;
 }
@@ -86,9 +90,16 @@ void fragment(){
  float fresnel=pow(1.0-max(dot(normal_,eye),0.0),3.0);
  float tone=clamp(0.43+((face-0.82)*1.65+wave.x*0.20)*detail,0.08,0.9);
  vec3 water=mix(vec3(0.045,0.18,0.30),vec3(0.13,0.37,0.49),tone);
+ float shore=distance_to_quay(p);
+ float harbor_edge=shore;
+ for(int i=0;i<harbor_color_edge_count;i++){
+  harbor_edge=min(harbor_edge,edge_distance(p,harbor_color_edges[i]));
+ }
+ float harbor_tint=1.0-smoothstep(3.0,23.0,harbor_edge);
+ vec3 harbor_water=mix(vec3(0.035,0.34,0.43),vec3(0.10,0.55,0.61),tone);
+ water=mix(water,harbor_water,harbor_tint);
  float near_camera=1.0-smoothstep(34.0,92.0,distance_);
  if(near_camera>0.0){
-  float shore=distance_to_quay(p);
   float shallows=(1.0-smoothstep(0.4,14.0,shore+water_noise(p*0.18)*3.2))*near_camera;
   if(shallows>0.0){
    vec2 bed=p+wave.yz*0.48+eye.xz*0.22;
@@ -100,7 +111,8 @@ void fragment(){
    water=mix(water,seabed,shallows*mix(0.87,0.28,fresnel));
   }
  }
- water=mix(water,vec3(0.42,0.63,0.73),fresnel*0.23);
+ vec3 reflected_sky=mix(vec3(0.42,0.63,0.73),vec3(0.32,0.64,0.69),harbor_tint);
+ water=mix(water,reflected_sky,fresnel*0.23);
  vec2 flow=p+vec2(clock*2.9,clock*0.25);
  float broken=water_noise(flow*0.85)*0.65+water_noise(flow*2.1)*0.35;
  float crest=smoothstep(0.12,0.40,wave.x)*smoothstep(0.45,0.72,broken);
