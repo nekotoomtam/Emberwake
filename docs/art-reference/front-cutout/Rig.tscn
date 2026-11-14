@@ -1,0 +1,80 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://rig.gd" id="1"]
+
+[node name="RightCutout" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Skeleton2D" type="Skeleton2D" parent="."]
+
+[node name="torso" type="Bone2D" parent="Skeleton2D"]
+position = Vector2(623, 861)
+rest = Transform2D(1, 0, 0, 1, 623, 861)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="near_upper_arm" type="Bone2D" parent="Skeleton2D/torso"]
+position = Vector2(-86, -206)
+rest = Transform2D(1, 0, 0, 1, -86, -206)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="head" type="Bone2D" parent="Skeleton2D/torso"]
+position = Vector2(0, -266)
+rest = Transform2D(1, 0, 0, 1, 0, -266)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="far_thigh" type="Bone2D" parent="Skeleton2D/torso"]
+position = Vector2(63, 14)
+rest = Transform2D(1, 0, 0, 1, 63, 14)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="far_upper_arm" type="Bone2D" parent="Skeleton2D/torso"]
+position = Vector2(86, -206)
+rest = Transform2D(1, 0, 0, 1, 86, -206)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="near_thigh" type="Bone2D" parent="Skeleton2D/torso"]
+position = Vector2(-63, 14)
+rest = Transform2D(1, 0, 0, 1, -63, 14)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="near_forearm" type="Bone2D" parent="Skeleton2D/torso/near_upper_arm"]
+position = Vector2(-36, 85)
+rest = Transform2D(1, 0, 0, 1, -36, 85)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="far_shin_foot" type="Bone2D" parent="Skeleton2D/torso/far_thigh"]
+position = Vector2(4, 132)
+rest = Transform2D(1, 0, 0, 1, 4, 132)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="far_forearm" type="Bone2D" parent="Skeleton2D/torso/far_upper_arm"]
+position = Vector2(36, 85)
+rest = Transform2D(1, 0, 0, 1, 36, 85)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="near_shin_foot" type="Bone2D" parent="Skeleton2D/torso/near_thigh"]
+position = Vector2(-4, 132)
+rest = Transform2D(1, 0, 0, 1, -4, 132)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="near_hand" type="Bone2D" parent="Skeleton2D/torso/near_upper_arm/near_forearm"]
+position = Vector2(-34, 94)
+rest = Transform2D(1, 0, 0, 1, -34, 94)
+auto_calculate_length_and_angle = false
+length = 50
+
+[node name="far_hand" type="Bone2D" parent="Skeleton2D/torso/far_upper_arm/far_forearm"]
+position = Vector2(34, 94)
+rest = Transform2D(1, 0, 0, 1, 34, 94)
+auto_calculate_length_and_angle = false
+length = 50

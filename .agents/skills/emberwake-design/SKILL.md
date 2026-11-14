@@ -1,6 +1,6 @@
 ---
 name: emberwake-design
-description: Use when designing or reviewing Emberwake game systems, combat abilities, character appearance, balance, playtests, or when capturing a verified lesson to prevent an Emberwake issue from recurring.
+description: Use when creating or editing images for Emberwake, designing or reviewing its game systems, combat abilities, character appearance, balance, or playtests, or capturing verified lessons for the project.
 ---
 
 # Emberwake Design
@@ -15,6 +15,7 @@ Use the real-time action game in this repository as the default target for Ember
 | --- | --- |
 | Game loops, encounters, progression, and combat rules | [Game design](references/game.md) |
 | Character appearance and design variants | [Character design](references/character.md) |
+| Image generation or editing for Emberwake | [Art direction and image generation](references/character.md#char-004--use-the-selected-art-direction-for-emberwake-images) |
 | Combat skills, attack effects, reactions, and status effects | [Combat abilities](references/abilities.md) |
 | Values, choice dominance, and playtest comparisons | [Balance](references/balance.md) |
 | Design review, art QC, and regression evidence | [Review](references/review.md) |

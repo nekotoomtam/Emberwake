@@ -1,0 +1,14 @@
+config_version=5
+
+[application]
+config/name="Emberwake Left Cutout Rig"
+run/main_scene="res://LeftRig.tscn"
+
+[display]
+window/size/viewport_width=1050
+window/size/viewport_height=800
+window/stretch/mode="canvas_items"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.953, 0.922, 0.882, 1)

@@ -1,0 +1,202 @@
+{
+  "front": {
+    "torso": {
+      "z": 10,
+      "visible": true
+    },
+    "head": {
+      "z": 11,
+      "visible": true
+    },
+    "upper_arm_r": {
+      "z": 4,
+      "visible": true
+    },
+    "forearm_r": {
+      "z": 5,
+      "visible": true
+    },
+    "hand_r": {
+      "z": 6,
+      "visible": true
+    },
+    "thigh_r": {
+      "z": 0,
+      "visible": true
+    },
+    "lower_leg_foot_r": {
+      "z": 2,
+      "visible": true
+    },
+    "upper_arm_l": {
+      "z": 7,
+      "visible": true
+    },
+    "forearm_l": {
+      "z": 8,
+      "visible": true
+    },
+    "hand_l": {
+      "z": 9,
+      "visible": true
+    },
+    "thigh_l": {
+      "z": 1,
+      "visible": true
+    },
+    "lower_leg_foot_l": {
+      "z": 3,
+      "visible": true
+    }
+  },
+  "back": {
+    "torso": {
+      "z": 10,
+      "visible": true
+    },
+    "head": {
+      "z": 11,
+      "visible": true
+    },
+    "upper_arm_l": {
+      "z": 4,
+      "visible": true
+    },
+    "forearm_l": {
+      "z": 5,
+      "visible": true
+    },
+    "hand_l": {
+      "z": 6,
+      "visible": true
+    },
+    "thigh_l": {
+      "z": 0,
+      "visible": true
+    },
+    "lower_leg_foot_l": {
+      "z": 2,
+      "visible": true
+    },
+    "upper_arm_r": {
+      "z": 7,
+      "visible": true
+    },
+    "forearm_r": {
+      "z": 8,
+      "visible": true
+    },
+    "hand_r": {
+      "z": 9,
+      "visible": true
+    },
+    "thigh_r": {
+      "z": 1,
+      "visible": true
+    },
+    "lower_leg_foot_r": {
+      "z": 3,
+      "visible": true
+    }
+  },
+  "left": {
+    "torso": {
+      "z": 7,
+      "visible": true
+    },
+    "head": {
+      "z": 11,
+      "visible": true
+    },
+    "upper_arm_r": {
+      "z": 4,
+      "visible": true
+    },
+    "forearm_r": {
+      "z": 5,
+      "visible": true
+    },
+    "hand_r": {
+      "z": 6,
+      "visible": true
+    },
+    "thigh_r": {
+      "z": 0,
+      "visible": true
+    },
+    "lower_leg_foot_r": {
+      "z": 2,
+      "visible": true
+    },
+    "upper_arm_l": {
+      "z": 8,
+      "visible": true
+    },
+    "forearm_l": {
+      "z": 9,
+      "visible": true
+    },
+    "hand_l": {
+      "z": 10,
+      "visible": true
+    },
+    "thigh_l": {
+      "z": 1,
+      "visible": true
+    },
+    "lower_leg_foot_l": {
+      "z": 3,
+      "visible": true
+    }
+  },
+  "right": {
+    "torso": {
+      "z": 7,
+      "visible": true
+    },
+    "head": {
+      "z": 11,
+      "visible": true
+    },
+    "upper_arm_r": {
+      "z": 8,
+      "visible": true
+    },
+    "forearm_r": {
+      "z": 9,
+      "visible": true
+    },
+    "hand_r": {
+      "z": 10,
+      "visible": true
+    },
+    "thigh_r": {
+      "z": 0,
+      "visible": true
+    },
+    "lower_leg_foot_r": {
+      "z": 2,
+      "visible": true
+    },
+    "upper_arm_l": {
+      "z": 4,
+      "visible": true
+    },
+    "forearm_l": {
+      "z": 5,
+      "visible": true
+    },
+    "hand_l": {
+      "z": 6,
+      "visible": true
+    },
+    "thigh_l": {
+      "z": 1,
+      "visible": true
+    },
+    "lower_leg_foot_l": {
+      "z": 3,
+      "visible": true
+    }
+  }
+}
